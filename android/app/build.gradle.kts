@@ -14,6 +14,12 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // A signed demonstration must opt in explicitly; production release stays closed.
+        buildConfigField("boolean", "LOCAL_MOCK", "false")
+    }
+
+    buildTypes.getByName("debug") {
+        buildConfigField("boolean", "LOCAL_MOCK", "true")
     }
 
     flavorDimensions += "signal"
@@ -62,7 +68,7 @@ val exportGodotPack by tasks.registering(Exec::class) {
     val projectDir = rootProject.file("../godot")
     val pack = layout.buildDirectory.file("generated/godotAssets/cash_drive.pck")
     inputs.files(fileTree(projectDir) {
-        include("**/*.gd", "**/*.tscn", "**/*.glb", "**/*.import", "**/*.png", "project.godot", "export_presets.cfg")
+        include("**/*.gd", "**/*.gdshader", "**/*.gdshaderinc", "**/*.tscn", "**/*.glb", "**/*.import", "**/*.png", "project.godot", "export_presets.cfg")
         exclude(".godot/**", "tests/**", "tools/**")
     })
     outputs.file(pack)
