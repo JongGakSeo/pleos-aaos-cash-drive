@@ -242,24 +242,28 @@ func _apply_look() -> void:
 func _layout() -> void:
 	_place_camera(0.0 if not is_processing() else sin(phase * 0.35) * 0.09)
 
-## Fits the model into the area between the native top bar and bottom dock.
+## Fits the model into the area left by the native controls: top buttons on every panel,
+## a bottom dock on narrow panels, and a right-hand panel on wide ones.
 func _place_camera(orbit: float) -> void:
 	var view := get_viewport().get_visible_rect().size
 	if view.x <= 0.0 or view.y <= 0.0:
 		return
 	var aspect := view.x / view.y
-	var top := 0.09 if aspect < 1.4 else 0.13
-	var bottom := 0.27 if aspect < 1.4 else 0.20
+	var is_wide := aspect >= 1.4
+	var top := 0.11
+	var bottom := 0.04 if is_wide else 0.19
+	var right := 0.285 if is_wide else 0.0
 	var usable := 1.0 - top - bottom
 	var half_tan := tan(deg_to_rad(CAMERA_FOV) * 0.5)
 	var by_height := _model_size.y * 1.08 / (usable * 0.92) / (2.0 * half_tan)
-	var by_width := _model_size.x / 0.94 / (2.0 * half_tan * aspect)
+	var by_width := _model_size.x / (0.94 * (1.0 - right)) / (2.0 * half_tan * aspect)
 	var distance := maxf(by_height, by_width) + _model_size.z * 0.5
 	var target := Vector3(0, _model_size.y * 0.5, 0)
 	_camera.position = target + Vector3(sin(orbit) * distance, distance * CAMERA_LIFT, cos(orbit) * distance)
 	_camera.look_at(target)
 	var visible_height := 2.0 * distance * half_tan
 	_camera.v_offset = -(0.5 - (top + usable * 0.5)) * visible_height
+	_camera.h_offset = right * 0.5 * visible_height * aspect
 	_backdrop.set_ground(_camera.unproject_position(Vector3(0, _model_size.y * 0.04, -_model_size.z * 0.25)).y)
 	_backdrop.set_focus(_camera.unproject_position(target), view.y * usable * 0.5)
 
