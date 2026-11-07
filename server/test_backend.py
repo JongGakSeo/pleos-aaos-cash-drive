@@ -1,4 +1,5 @@
 import concurrent.futures
+from contextlib import closing
 import hmac
 import http.client
 import json
@@ -214,6 +215,110 @@ class BackendTests(unittest.TestCase):
         self.clock[0]+=1
         response=self.store.sandbox_ad_complete(self.p,"complete-key-000010",body)
         self.assertEqual(response["source"],"NON_PROVIDER_SANDBOX")
+
+    def test_idempotency_key_cannot_cross_ad_start_and_completion(self):
+        ticket=self.ticket()
+        session=self.store.create_ad_session(self.p,"ad-key-000010",{"schemaVersion":1,"rewardTicketId":ticket,"placement":"PARKED_REWARDED"})
+        body={"schemaVersion":1,"adSessionId":session["id"]}
+        started=self.store.start_ad_session(self.p,"shared-ad-key",body)
+        self.clock[0]+=5
+        with self.assertRaisesRegex(ApiError,"idempotency_key_operation_mismatch"):
+            self.store.sandbox_ad_complete(self.p,"shared-ad-key",body)
+        completed=self.store.sandbox_ad_complete(self.p,"complete-key-000010",body)
+        self.assertEqual(completed["source"],"NON_PROVIDER_SANDBOX")
+        self.assertEqual(self.store.start_ad_session(self.p,"shared-ad-key",body),started)
+        self.assertEqual(self.store.sandbox_ad_complete(self.p,"complete-key-000010",body),completed)
+        with self.assertRaisesRegex(ApiError,"idempotency_key_operation_mismatch"):
+            self.store.start_ad_session(self.p,"complete-key-000010",body)
+        self.assertEqual(self.store.wallet(self.p)["confirmedPoints"],0)
+        self.claim(ticket,session["id"])
+        self.assertEqual(self.store.wallet(self.p)["confirmedPoints"],10)
+
+    def test_proof_before_playback_start_is_rejected_without_credit(self):
+        ticket=self.ticket()
+        session=self.store.create_ad_session(self.p,"ad-key-000010",{"schemaVersion":1,"rewardTicketId":ticket,"placement":"PARKED_REWARDED"})
+        created=self.clock[0]
+        self.clock[0]+=3
+        self.store.start_ad_session(self.p,"start-key-000010",{"schemaVersion":1,"adSessionId":session["id"]})
+        self.assertEqual(self.claim(ticket,session["id"])["status"],"PENDING_PROOF")
+        self.clock[0]+=5
+        body={"adSessionId":session["id"],"providerTransactionId":"pre-start-tx","occurredAt":str(created+1)}
+        raw=json.dumps(body,separators=(",",":")).encode()
+        with self.assertRaisesRegex(ApiError,"proof_time_invalid"):
+            self.store.receive_proof(raw,body)
+        self.assertEqual(self.store.wallet(self.p)["confirmedPoints"],0)
+        raw,body=self.proof(session["id"],"pre-start-tx")
+        self.store.receive_proof(raw,body)
+        self.assertEqual(self.claim(ticket,session["id"])["status"],"CREDITED")
+        self.assertEqual(self.store.wallet(self.p)["confirmedPoints"],10)
+
+    def test_legacy_database_replays_all_operations_without_cross_endpoint_reuse(self):
+        ticket=self.ticket()
+        ad_body={"schemaVersion":1,"rewardTicketId":ticket,"placement":"PARKED_REWARDED"}
+        ad=self.store.create_ad_session(self.p,"ad-key-000010",ad_body)
+        session_body={"schemaVersion":1,"adSessionId":ad["id"]}
+        self.store.start_ad_session(self.p,"start-key-000010",session_body)
+        self.clock[0]+=5
+        self.store.sandbox_ad_complete(self.p,"complete-key-000010",session_body)
+        self.claim(ticket,ad["id"])
+        with closing(self.store.connect()) as db:
+            cached={row["key"]:json.loads(row["response_json"]) for row in db.execute("SELECT * FROM idempotency")}
+            # Recreate the actual four-column schema shipped before operation scoping.
+            db.execute("ALTER TABLE idempotency RENAME TO scoped_idempotency")
+            db.execute("CREATE TABLE idempotency(account_id TEXT NOT NULL REFERENCES accounts(id), key TEXT NOT NULL, body_hash TEXT NOT NULL, response_json TEXT NOT NULL, PRIMARY KEY(account_id,key))")
+            db.execute("INSERT INTO idempotency SELECT account_id,key,body_hash,response_json FROM scoped_idempotency")
+            db.execute("DROP TABLE scoped_idempotency")
+        reopened=Store(self.path,clock=lambda:self.clock[0])
+        with self.assertRaisesRegex(ApiError,"idempotency_key_operation_mismatch"):
+            reopened.sandbox_ad_complete(self.p,"start-key-000010",session_body)
+        baseline={"schemaVersion":1,"installationId":"car-a","tripId":"trip-a","bootId":"boot-a","odometerMeters":10000,"elapsedMs":1000}
+        claim_body={"schemaVersion":1,"rewardTicketId":ticket,"adSessionId":ad["id"],"userConfirmed":True}
+        for call,key,body in [
+            (reopened.start_trip,"trip-key-0001",baseline),
+            (reopened.distance_chunk,"chunk-key-0001",self.chunk()),
+            (reopened.create_ad_session,"ad-key-000010",ad_body),
+            (reopened.start_ad_session,"start-key-000010",session_body),
+            (reopened.sandbox_ad_complete,"complete-key-000010",session_body),
+            (reopened.claim,"claim-key-0001",claim_body),
+        ]:
+            with self.subTest(operation=call.__name__):
+                self.assertEqual(call(self.p,key,body),cached[key])
+        with closing(reopened.connect()) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM idempotency WHERE operation IS NULL").fetchone()[0],0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM ledger").fetchone()[0],1)
+        self.assertEqual(reopened.wallet(self.p)["confirmedPoints"],10)
+
+    def test_unknown_legacy_idempotency_response_fails_closed(self):
+        ticket=self.ticket(); ad=self.ad(ticket)
+        ambiguous={"status":"STARTED","adSessionId":ad["id"],"startedAt":0,
+                   "baselineStatus":"UNREWARDED_CLIENT_REPORTED","tripId":"trip-a"}
+        for response in [{}, [], None, ambiguous]:
+            with self.subTest(response=response):
+                with closing(self.store.connect()) as db:
+                    db.execute("UPDATE idempotency SET operation=NULL,response_json=? WHERE key='start-key-000001'",(json.dumps(response),))
+                with self.assertRaisesRegex(ApiError,"idempotency_key_operation_unknown"):
+                    self.store.start_ad_session(self.p,"start-key-000001",{"schemaVersion":1,"adSessionId":ad["id"]})
+        self.assertEqual(self.store.wallet(self.p)["confirmedPoints"],0)
+
+    def test_http_rejects_cross_endpoint_key_and_accepts_fresh_completion_key(self):
+        ticket=self.ticket()
+        ad=self.store.create_ad_session(self.p,"ad-key-000010",{"schemaVersion":1,"rewardTicketId":ticket,"placement":"PARKED_REWARDED"})
+        raw=json.dumps({"schemaVersion":1,"adSessionId":ad["id"]}).encode()
+        server=Server(("127.0.0.1",0),self.store,True,b"fixture-secret")
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        conn=http.client.HTTPConnection("127.0.0.1",server.server_port)
+        def request(path,key):
+            conn.request("POST",path,raw,{"Content-Type":"application/json","Authorization":"Bearer "+self.login["accessToken"],"Idempotency-Key":key})
+            response=conn.getresponse();return response.status,json.loads(response.read())
+        try:
+            self.assertEqual(request("/v1/ad-sessions/start","http-shared-key")[0],200)
+            self.clock[0]+=5
+            status,payload=request("/v1/sandbox/ad-complete","http-shared-key")
+            self.assertEqual((status,payload["error"]),(409,"idempotency_key_operation_mismatch"))
+            status,payload=request("/v1/sandbox/ad-complete","http-complete-key")
+            self.assertEqual((status,payload["source"]),(200,"NON_PROVIDER_SANDBOX"))
+        finally:
+            conn.close();server.shutdown();server.server_close();thread.join()
 
     def test_http_rejects_nonfinite_json_and_truncated_request_body(self):
         server=Server(("127.0.0.1",0),self.store,True,b"")

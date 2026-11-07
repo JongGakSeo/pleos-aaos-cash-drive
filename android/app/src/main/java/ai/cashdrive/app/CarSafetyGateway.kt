@@ -8,6 +8,7 @@ import android.car.hardware.CarPropertyValue
 import android.car.hardware.property.CarPropertyManager
 import android.content.Context
 import android.os.Handler
+import android.util.Log
 import android.os.Looper
 import ai.cashdrive.core.safety.GearEvidence
 import ai.cashdrive.core.safety.SafetyReducer
@@ -42,7 +43,7 @@ class CarSafetyGateway(context: Context, private val reducer: SafetyReducer,
         epoch = maxOf(epoch, reducer.current().generation) + 1
         sequence = 0
         lastGearTimestamp = -1L
-        onSnapshot(reducer.invalidate(epoch))
+        publish(reducer.invalidate(epoch))
     }
     private fun connect() {
         if (!active) return
@@ -71,7 +72,7 @@ class CarSafetyGateway(context: Context, private val reducer: SafetyReducer,
             properties = connected.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
             val uxManager = checkNotNull(ux)
             val propertyManager = checkNotNull(properties)
-            onSnapshot(reducer.onConnected(epoch, ++sequence))
+            publish(reducer.onConnected(epoch, ++sequence))
             val uxListener = CarUxRestrictionsManager.OnUxRestrictionsChangedListener {
                 main.post {
                     if (active && epoch == registrationEpoch) {
@@ -79,7 +80,7 @@ class CarSafetyGateway(context: Context, private val reducer: SafetyReducer,
                             // Public API 34 exposes no UXR timestamp. Re-read current state so a queued
                             // old event cannot overwrite a newer authoritative restriction snapshot.
                             val current = checkNotNull(uxManager.currentCarUxRestrictions)
-                            onSnapshot(reducer.onUxRestrictions(epoch, ++sequence,
+                            publish(reducer.onUxRestrictions(epoch, ++sequence,
                                 current.isRequiresDistractionOptimization, current.activeRestrictions))
                         } catch (_: RuntimeException) { retry(registrationEpoch) }
                     }
@@ -99,7 +100,7 @@ class CarSafetyGateway(context: Context, private val reducer: SafetyReducer,
                         // must never reopen the gate after a newer unavailable sample.
                         lastGearTimestamp = value.timestamp
                         if (value.status != CarPropertyValue.STATUS_AVAILABLE) {
-                            onSnapshot(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
+                            publish(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
                             return@post
                         }
                         val evidence = when (value.value as? Int) {
@@ -107,23 +108,28 @@ class CarSafetyGateway(context: Context, private val reducer: SafetyReducer,
                             null, VehicleGear.GEAR_UNKNOWN -> GearEvidence.UNKNOWN
                             else -> GearEvidence.NOT_PARK
                         }
-                        onSnapshot(reducer.onGear(epoch, ++sequence, evidence))
+                        publish(reducer.onGear(epoch, ++sequence, evidence))
                     }
                 }
                 override fun onErrorEvent(propertyId: Int, areaId: Int) {
                     if (propertyId != VehiclePropertyIds.GEAR_SELECTION) return
                     main.post {
                         if (active && epoch == registrationEpoch)
-                            onSnapshot(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
+                            publish(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
                     }
                 }
             }
             propertyListener = listener
             if (!propertyManager.registerCallback(listener, VehiclePropertyIds.GEAR_SELECTION,
                     CarPropertyManager.SENSOR_RATE_ONCHANGE)) {
-                onSnapshot(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
+                publish(reducer.onGear(epoch, ++sequence, GearEvidence.UNKNOWN))
             }
         } catch (_: RuntimeException) { retry(registrationEpoch) }
+    }
+    private fun publish(snapshot: SafetySnapshot) {
+        // Debug evidence only: no account, vehicle identifier, token, or private endpoint.
+        if (BuildConfig.DEBUG) Log.i("CashDriveSafety", "source=CAR generation=${snapshot.generation} sequence=${snapshot.sequence} connected=${snapshot.connected} uxrDo=${snapshot.uxrRequiresDistractionOptimization} active=${snapshot.activeUxRestrictions} gear=${snapshot.gear} state=${snapshot.state}")
+        onSnapshot(snapshot)
     }
     private fun release() {
         runCatching { ux?.unregisterListener() }

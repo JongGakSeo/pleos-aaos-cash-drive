@@ -1,11 +1,11 @@
 extends Node
 
 var host: Object
-var renderer: SkinRenderer
+var renderer: ThemeStage
 
 func _ready() -> void:
 	set_process(false)
-	renderer = get_parent() as SkinRenderer
+	renderer = get_parent() as ThemeStage
 	if Engine.has_singleton("CashDrivePreview"):
 		host = Engine.get_singleton("CashDrivePreview")
 		renderer.set_host_guard(Callable(host, "is_allowed"))

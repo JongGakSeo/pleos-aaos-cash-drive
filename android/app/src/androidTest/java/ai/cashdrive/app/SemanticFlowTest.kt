@@ -1,5 +1,6 @@
 package ai.cashdrive.app
 
+import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.view.accessibility.AccessibilityNodeInfo
@@ -52,8 +53,14 @@ class SemanticFlowTest {
         assumeTrue("Demo variant only", BuildConfig.DEMO_SIGNALS)
         // Explicit fixture reset: this test is only for the project-owned demo AVD.
         context.getSharedPreferences("cash_drive_local", 0).edit().clear().commit()
-        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // A new isolated server DB cannot recognize a bearer saved by an earlier test run.
+        // Preserve it without exposing it; start this UI fixture explicitly signed out.
+        val fixtureVault = TokenVault(context)
+        val previousSession = fixtureVault.load()
+        fixtureVault.clear()
+        var activity: Activity? = null
         try {
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             click("시작하기")
             sees("안전 상태 확인 중")
             assertTrue(matches("설정", exact = true).isEmpty())
@@ -106,7 +113,8 @@ class SemanticFlowTest {
                 checkNotNull(automation.takeScreenshot()).compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         } finally {
-            instrumentation.runOnMainSync { activity.finish() }
+            activity?.let { opened -> instrumentation.runOnMainSync { opened.finish() } }
+            if (previousSession == null) fixtureVault.clear() else fixtureVault.save(previousSession)
         }
     }
 }

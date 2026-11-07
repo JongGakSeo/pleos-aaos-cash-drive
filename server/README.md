@@ -21,7 +21,11 @@ python3 -m unittest server.test_backend -v
 
 로그인 helper는 `POST /v1/sandbox/login`에 `{"accountAlias":"alice","installationId":"car-a"}`를 보내고 응답의 임의 bearer를 로컬에서 사용한다. 같은 alias는 같은 계정으로 복구되며 설치 ID는 다른 계정에 재바인딩할 수 없다. 토큰 원문은 저장하지 않고 SHA-256만 저장한다. 이 helper는 개발용 가짜 identity다.
 
-보호된 API는 `Authorization: Bearer …`가 필요하다. 모든 쓰기 API는 8~128자 `Idempotency-Key`를 받고, 같은 키와 다른 JSON body는 `409 idempotency_key_body_mismatch`다.
+보호된 API는 `Authorization: Bearer …`가 필요하다. 모든 쓰기 API는 8~128자 `Idempotency-Key`를 받는다. 키는 계정 내에서 하나의 API 작업과 본문에 귀속된다. 같은 키를 다른 API에 쓰면 본문이 같더라도 `409 idempotency_key_operation_mismatch`, 같은 API에서 본문을 바꾸면 `409 idempotency_key_body_mismatch`다. 시작/완료/확인에는 각각 다른 키를 사용하고, 같은 작업의 응답 손실 재시도에만 원래 키를 유지한다.
+
+기존 4열 idempotency 테이블은 operation 열을 추가하고 알려진 기존 응답 형식으로 원래 API 작업을 식별해 같은 작업의 재시도를 보존한다. 형식이 불명확한 과거 응답은 `409 idempotency_key_operation_unknown`으로 닫는다. 이 경우 DB·원장을 지우거나 새 키로 무작정 재전송하지 말고 기존 응답과 원장을 대조해 명시적으로 마이그레이션해야 한다.
+
+완료 증명의 occurredAt은 세션 생성 시각이 아니라 실제 시작 표식 startedAt 이후부터 수신 시각까지의 범위여야 한다. 시작 전 시각의 증명은 `422 proof_time_invalid`로 거절하며, 먼저 제출한 사용자 확인만으로 원장에 적립하지 않는다.
 
 | Method / path | 핵심 body | 결과 |
 |---|---|---|

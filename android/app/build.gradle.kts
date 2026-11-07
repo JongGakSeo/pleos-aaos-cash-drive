@@ -14,6 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Current project targets: arm64 vehicle and x86_64/arm64 emulators.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     flavorDimensions += "signal"
@@ -31,7 +33,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
     useLibrary("android.car")
     androidResources { noCompress += "pck" }
-    sourceSets.getByName("debug").assets.srcDir(layout.buildDirectory.dir("generated/godotAssets"))
 }
 
 androidComponents {
@@ -52,14 +53,25 @@ val exportGodotPack by tasks.registering(Exec::class) {
     val projectDir = rootProject.file("../godot")
     val pack = layout.buildDirectory.file("generated/godotAssets/cash_drive.pck")
     inputs.files(fileTree(projectDir) {
-        include("**/*.gd", "**/*.tscn", "project.godot", "export_presets.cfg")
-        exclude(".godot/**", "tests/**")
+        include("**/*.gd", "**/*.tscn", "**/*.glb", "**/*.import", "**/*.png", "project.godot", "export_presets.cfg")
+        exclude(".godot/**", "tests/**", "tools/**")
     })
     outputs.file(pack)
-    doFirst { pack.get().asFile.parentFile.mkdirs() }
-    commandLine(rootProject.file("../.tools/godot/Godot.app/Contents/MacOS/Godot").absolutePath,
+    val toolsDir = rootProject.file(providers.environmentVariable("CASHDRIVE_TOOLS_ROOT").orElse("../.tools").get())
+    val godotExecutable = toolsDir.resolve("godot/Godot.app/Contents/MacOS/Godot").absolutePath
+    doFirst {
+        pack.get().asFile.parentFile.mkdirs()
+        // Cold worktrees need imported GLB/texture resources before the Android export.
+        project.exec {
+            commandLine(godotExecutable, "--headless", "--editor", "--import", "--path", projectDir.absolutePath)
+        }
+    }
+    commandLine(godotExecutable,
         "--headless", "--path", projectDir.absolutePath, "--export-pack", "Android PCK", pack.get().asFile.absolutePath)
 }
+android.sourceSets.getByName("debug").assets.srcDir(layout.buildDirectory.dir("generated/godotAssets"))
 tasks.configureEach {
-    if (name.matches(Regex("merge.*DebugAssets"))) dependsOn(exportGodotPack)
+    // AGP 8.7.3 model writers and lint analysis/report tasks read the generated assets.
+    if (name.matches(Regex("merge.*DebugAssets")) ||
+        (name.contains("Debug") && name.contains("lint", ignoreCase = true))) dependsOn(exportGodotPack)
 }

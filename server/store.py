@@ -48,7 +48,7 @@ class Store:
               installation_id TEXT NOT NULL REFERENCES installations(id), created_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS idempotency(
               account_id TEXT NOT NULL REFERENCES accounts(id), key TEXT NOT NULL, body_hash TEXT NOT NULL,
-              response_json TEXT NOT NULL, PRIMARY KEY(account_id,key));
+              response_json TEXT NOT NULL, operation TEXT, PRIMARY KEY(account_id,key));
             CREATE TABLE IF NOT EXISTS distance_state(
               installation_id TEXT PRIMARY KEY REFERENCES installations(id), fractional_m INTEGER NOT NULL DEFAULT 0,
               last_odometer_m INTEGER, last_end_elapsed_ms INTEGER);
@@ -85,6 +85,9 @@ class Store:
               ad_transaction_id TEXT NOT NULL UNIQUE, points INTEGER NOT NULL, created_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS ticket_owner_idx ON tickets(account_id,created_at);
             """)
+            idem_columns = {row["name"] for row in db.execute("PRAGMA table_info(idempotency)")}
+            if "operation" not in idem_columns:
+                db.execute("ALTER TABLE idempotency ADD COLUMN operation TEXT")
             columns = {row["name"] for row in db.execute("PRAGMA table_info(distance_state)")}
             if "last_end_elapsed_ms" not in columns:
                 db.execute("ALTER TABLE distance_state ADD COLUMN last_end_elapsed_ms INTEGER")
@@ -161,18 +164,42 @@ class Store:
                 raise ApiError(401, "invalid_bearer_token")
             return {"accountId": row["account_id"], "installationId": row["installation_id"]}
 
-    def _idem_get(self, db: sqlite3.Connection, account: str, key: str, body: dict[str, Any]) -> dict[str, Any] | None:
-        row = db.execute("SELECT body_hash,response_json FROM idempotency WHERE account_id=? AND key=?", (account,key)).fetchone()
+    @staticmethod
+    def _legacy_operation(response: Any) -> str | None:
+        """Recognize only known cached response shapes from the unscoped sandbox DB."""
+        if not isinstance(response, dict):
+            return None
+        matches = [name for name, matched in (
+            ("trip_baseline", response.get("baselineStatus") == "UNREWARDED_CLIENT_REPORTED" and "tripId" in response),
+            ("distance_chunk", response.get("evidenceStatus") == "CLIENT_REPORTED_UNVERIFIED" and "tickets" in response),
+            ("ad_create", response.get("provider") == "sandbox" and response.get("status") == "CREATED" and "ticketId" in response),
+            ("ad_start", response.get("status") == "STARTED" and "adSessionId" in response and "startedAt" in response),
+            ("sandbox_complete", response.get("source") == "NON_PROVIDER_SANDBOX" and response.get("accepted") is True and "proofId" in response and "providerTransactionId" in response),
+            ("reward_claim", response.get("status") in ("PENDING_PROOF", "CREDITED") and "ledgerEntry" in response),
+        ) if matched]
+        return matches[0] if len(matches) == 1 else None
+
+    def _idem_get(self, db: sqlite3.Connection, account: str, key: str, body: dict[str, Any], operation: str) -> dict[str, Any] | None:
+        row = db.execute("SELECT body_hash,response_json,operation FROM idempotency WHERE account_id=? AND key=?", (account,key)).fetchone()
         if not row:
             return None
+        response = json.loads(row["response_json"])
+        stored_operation = row["operation"] or self._legacy_operation(response)
+        if stored_operation is None:
+            raise ApiError(409, "idempotency_key_operation_unknown")
+        if stored_operation != operation:
+            raise ApiError(409, "idempotency_key_operation_mismatch")
         if row["body_hash"] != digest(self._json(body)):
             raise ApiError(409, "idempotency_key_body_mismatch")
-        return json.loads(row["response_json"])
+        if row["operation"] is None:
+            db.execute("UPDATE idempotency SET operation=? WHERE account_id=? AND key=?", (operation,account,key))
+        return response
 
-    def _idem_put(self, db: sqlite3.Connection, account: str, key: str, body: dict[str, Any], response: dict[str, Any]) -> None:
-        db.execute("INSERT INTO idempotency VALUES(?,?,?,?)", (account,key,digest(self._json(body)),self._json(response)))
+    def _idem_put(self, db: sqlite3.Connection, account: str, key: str, body: dict[str, Any], response: dict[str, Any], operation: str) -> None:
+        db.execute("INSERT INTO idempotency(account_id,key,body_hash,response_json,operation) VALUES(?,?,?,?,?)", (account,key,digest(self._json(body)),self._json(response),operation))
 
     def start_trip(self, principal: dict[str,str], key: str, body: dict[str,Any]) -> dict[str,Any]:
+        operation = "trip_baseline"
         required={"schemaVersion","installationId","tripId","bootId","odometerMeters","elapsedMs"}
         if set(body)!=required or type(body.get("schemaVersion")) is not int or body["schemaVersion"]!=1:
             raise ApiError(400,"invalid_trip_baseline")
@@ -185,7 +212,7 @@ class Store:
         db=self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached=self._idem_get(db,principal["accountId"],key,body)
+            cached=self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None: db.commit(); return cached
             existing=db.execute("SELECT * FROM trips WHERE installation_id=? AND trip_id=?",(body["installationId"],body["tripId"])).fetchone()
             if existing:
@@ -193,11 +220,12 @@ class Store:
             db.execute("UPDATE trips SET status='CLOSED' WHERE installation_id=? AND status='ACTIVE'",(body["installationId"],))
             db.execute("INSERT INTO trips(installation_id,trip_id,boot_id,baseline_odometer_m,last_odometer_m,baseline_elapsed_ms,last_elapsed_ms,next_sequence,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,'ACTIVE')",(body["installationId"],body["tripId"],body["bootId"],body["odometerMeters"],body["odometerMeters"],body["elapsedMs"],body["elapsedMs"],0,self.now()))
             response={"accepted":True,"tripId":body["tripId"],"bootId":body["bootId"],"baselineStatus":"UNREWARDED_CLIENT_REPORTED"}
-            self._idem_put(db,principal["accountId"],key,body,response); db.commit(); return response
+            self._idem_put(db,principal["accountId"],key,body,response,operation); db.commit(); return response
         except Exception: db.rollback(); raise
         finally: db.close()
 
     def distance_chunk(self, principal: dict[str,str], key: str, body: dict[str,Any]) -> dict[str,Any]:
+        operation = "distance_chunk"
         required = {"schemaVersion","installationId","tripId","sequence","startElapsedMs","endElapsedMs","distanceMeters","odometerStartMeters","odometerEndMeters"}
         if set(body) != required or type(body.get("schemaVersion")) is not int or body["schemaVersion"] != 1:
             raise ApiError(400,"invalid_distance_chunk","Expected the documented schemaVersion 1 fields")
@@ -216,7 +244,7 @@ class Store:
         db = self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached = self._idem_get(db,principal["accountId"],key,body)
+            cached = self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None:
                 db.commit(); return cached
             account, installation, trip = principal["accountId"], principal["installationId"], body["tripId"]
@@ -247,19 +275,20 @@ class Store:
             db.execute("UPDATE trips SET next_sequence=?,last_odometer_m=?,last_elapsed_ms=? WHERE installation_id=? AND trip_id=?",(seq+1,odo1,end,installation,trip))
             db.execute("UPDATE distance_state SET fractional_m=? WHERE installation_id=?",(remain,installation))
             response = {"accepted":True,"distanceMeters":distance,"fractionalMeters":remain,"tickets":tickets,"evidenceStatus":"CLIENT_REPORTED_UNVERIFIED"}
-            self._idem_put(db,account,key,body,response); db.commit(); return response
+            self._idem_put(db,account,key,body,response,operation); db.commit(); return response
         except Exception:
             db.rollback(); raise
         finally:
             db.close()
 
     def create_ad_session(self, principal: dict[str,str], key: str, body: dict[str,Any]) -> dict[str,Any]:
+        operation = "ad_create"
         if set(body) != {"schemaVersion","rewardTicketId","placement"} or type(body.get("schemaVersion")) is not int or body.get("schemaVersion") != 1 or body.get("placement") != "PARKED_REWARDED" or not self._identifier(body.get("rewardTicketId")):
             raise ApiError(400,"invalid_ad_session")
         db=self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached=self._idem_get(db,principal["accountId"],key,body)
+            cached=self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None: db.commit(); return cached
             t=db.execute("SELECT * FROM tickets WHERE id=? AND account_id=?",(body["rewardTicketId"],principal["accountId"])).fetchone()
             if not t: raise ApiError(404,"ticket_not_found")
@@ -274,17 +303,18 @@ class Store:
             db.execute("INSERT INTO ad_sessions(id,account_id,ticket_id,created_at,expires_at,status,started_at) VALUES(?,?,?,?,?,?,NULL)",(sid,principal["accountId"],t["id"],now,expiry,"CREATED"))
             db.execute("UPDATE tickets SET status='AD_PLAYING' WHERE id=?",(t["id"],))
             response={"id":sid,"ticketId":t["id"],"provider":"sandbox","expiresAt":expiry,"status":"CREATED"}
-            self._idem_put(db,principal["accountId"],key,body,response); db.commit(); return response
+            self._idem_put(db,principal["accountId"],key,body,response,operation); db.commit(); return response
         except Exception: db.rollback(); raise
         finally: db.close()
 
     def start_ad_session(self, principal:dict[str,str], key:str, body:dict[str,Any]) -> dict[str,Any]:
+        operation = "ad_start"
         if set(body)!={"schemaVersion","adSessionId"} or type(body.get("schemaVersion")) is not int or body["schemaVersion"]!=1 or not self._identifier(body.get("adSessionId")):
             raise ApiError(400,"invalid_ad_start")
         db=self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached=self._idem_get(db,principal["accountId"],key,body)
+            cached=self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None: db.commit(); return cached
             session=db.execute("SELECT * FROM ad_sessions WHERE id=? AND account_id=?",(body["adSessionId"],principal["accountId"])).fetchone()
             if not session: raise ApiError(404,"ad_session_not_found")
@@ -292,7 +322,7 @@ class Store:
             started=session["started_at"] or self.now()
             db.execute("UPDATE ad_sessions SET started_at=? WHERE id=?",(started,session["id"]))
             response={"adSessionId":session["id"],"startedAt":started,"status":"STARTED"}
-            self._idem_put(db,principal["accountId"],key,body,response); db.commit(); return response
+            self._idem_put(db,principal["accountId"],key,body,response,operation); db.commit(); return response
         except Exception: db.rollback(); raise
         finally: db.close()
 
@@ -309,7 +339,7 @@ class Store:
             db.execute("UPDATE ad_sessions SET status='EXPIRED' WHERE id=?",(session_id,))
             db.execute("UPDATE tickets SET status='PENDING' WHERE id=?",(s["ticket_id"],))
             raise ApiError(410,"ad_session_expired")
-        if not s["created_at"]<=occurred<=now: raise ApiError(422,"proof_time_invalid")
+        if not s["started_at"]<=occurred<=now: raise ApiError(422,"proof_time_invalid")
         pid="proof_"+uuid.uuid4().hex
         db.execute("INSERT INTO proofs(id,account_id,session_id,transaction_id,body_hash,verified_at,source) VALUES(?,?,?,?,?,?,?)",(pid,s["account_id"],session_id,transaction_id,body_hash,now,source))
         db.execute("UPDATE ad_sessions SET status='COMPLETED' WHERE id=?",(session_id,))
@@ -332,12 +362,13 @@ class Store:
         finally: db.close()
 
     def sandbox_ad_complete(self, principal:dict[str,str], key:str, body:dict[str,Any]) -> dict[str,Any]:
+        operation = "sandbox_complete"
         if set(body)!={"schemaVersion","adSessionId"} or type(body.get("schemaVersion")) is not int or body["schemaVersion"]!=1 or not self._identifier(body.get("adSessionId")):
             raise ApiError(400,"invalid_sandbox_completion")
         db=self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached=self._idem_get(db,principal["accountId"],key,body)
+            cached=self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None: db.commit(); return cached
             session=db.execute("SELECT * FROM ad_sessions WHERE id=? AND account_id=?",(body["adSessionId"],principal["accountId"])).fetchone()
             if not session: raise ApiError(404,"ad_session_not_found")
@@ -348,7 +379,7 @@ class Store:
             signature_body=self._json({"adSessionId":session["id"],"providerTransactionId":transaction,"occurredAt":str(now),"source":"NON_PROVIDER_SANDBOX"})
             response=self._accept_proof(db,session["id"],transaction,digest(signature_body),now,"NON_PROVIDER_SANDBOX")
             response["providerTransactionId"]=transaction
-            self._idem_put(db,principal["accountId"],key,body,response); db.commit(); return response
+            self._idem_put(db,principal["accountId"],key,body,response,operation); db.commit(); return response
         except Exception: db.rollback(); raise
         finally: db.close()
 
@@ -363,12 +394,13 @@ class Store:
         return {"id":lid,"points":c["points"],"status":"CREDITED"}
 
     def claim(self, principal:dict[str,str], key:str, body:dict[str,Any]) -> dict[str,Any]:
+        operation = "reward_claim"
         if set(body)!={"schemaVersion","rewardTicketId","adSessionId","userConfirmed"} or type(body.get("schemaVersion")) is not int or body.get("schemaVersion")!=1 or body.get("userConfirmed") is not True or not self._identifier(body.get("rewardTicketId")) or not self._identifier(body.get("adSessionId")):
             raise ApiError(400,"explicit_confirmation_required")
         db=self.connect()
         try:
             db.execute("BEGIN IMMEDIATE")
-            cached=self._idem_get(db,principal["accountId"],key,body)
+            cached=self._idem_get(db,principal["accountId"],key,body,operation)
             if cached is not None:
                 ledger=db.execute("SELECT id,points FROM ledger WHERE ticket_id=?",(body["rewardTicketId"],)).fetchone()
                 if ledger: cached={"status":"CREDITED","ledgerEntry":{"id":ledger["id"],"points":ledger["points"],"status":"CREDITED"}}
@@ -388,7 +420,7 @@ class Store:
                 db.execute("INSERT INTO claims VALUES(?,?,?,?,?,?,?,?)",(claimid,principal["accountId"],t["id"],session["id"],key,digest(self._json(body)),self.now(),"PENDING"))
             ledger=self._credit_if_ready(db,t["id"],session["id"])
             response={"status":"CREDITED" if ledger else "PENDING_PROOF","ledgerEntry":ledger}
-            self._idem_put(db,principal["accountId"],key,body,response); db.commit(); return response
+            self._idem_put(db,principal["accountId"],key,body,response,operation); db.commit(); return response
         except Exception: db.rollback(); raise
         finally: db.close()
 
