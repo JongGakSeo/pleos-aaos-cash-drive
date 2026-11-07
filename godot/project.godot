@@ -4,8 +4,10 @@ config_version=5
 [application]
 config/name="Cash Drive Renderer"
 run/main_scene="res://main.tscn"
-run/max_fps=30
+run/max_fps=24
 run/low_processor_mode=true
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0.968627, 0.972549, 0.980392, 1)
 
 [display]
 window/size/viewport_width=840

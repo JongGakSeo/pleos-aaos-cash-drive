@@ -322,9 +322,9 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private fun buildAd() {
         ad.setBackgroundColor(0xFF0E0F11.toInt())
         val center = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        style(adTitle, 48, bold = true); adTitle.setTextColor(Color.WHITE)
+        style(adTitle, 48, bold = true); adTitle.setTextColor(Color.WHITE); adTitle.gravity = Gravity.CENTER
         center.addView(adTitle)
-        center.addView(text("실제 광고 소재가 재생될 자리", 26, 0xB8FFFFFF.toInt()))
+        center.addView(text("실제 광고 소재가 재생될 자리", 26, 0xB8FFFFFF.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
         ad.addView(center, match())
         val chip = text("광고", 24, Color.WHITE, bold = true).apply {
             background = rounded(0x29FFFFFF, 10f); setPadding(dp(16), dp(10), dp(16), dp(10))

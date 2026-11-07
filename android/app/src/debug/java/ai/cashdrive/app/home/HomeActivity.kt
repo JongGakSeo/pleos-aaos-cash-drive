@@ -359,7 +359,9 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdPlayer.L
     // GodotHost
     override fun getActivity(): Activity = this
     override fun getGodot(): Godot? = fragment?.godot
-    override fun getCommandLine() = listOf("--main-pack", "res://cash_drive.pck", "--rendering-method", "gl_compatibility")
+    /** Debug diagnosis: `--es godotArgs "--verbose res://diag/d1_mesh.tscn"` appends engine arguments. */
+    override fun getCommandLine() = listOf("--main-pack", "res://cash_drive.pck", "--rendering-method", "gl_compatibility") +
+        (intent?.getStringExtra("godotArgs")?.split(' ')?.filter { it.isNotBlank() } ?: emptyList())
     override fun getHostPlugins(godot: Godot): Set<GodotPlugin> = setOf(PreviewPlugin(godot).also { plugin = it })
     override fun onGodotMainLoopStarted() { runOnUiThread { loopStarted = true; enginePaused = false; publishScene() } }
     override fun onGodotForceQuit(instance: Godot) { runOnUiThread { finish() } }

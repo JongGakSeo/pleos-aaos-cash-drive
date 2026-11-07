@@ -6,11 +6,15 @@ var renderer: ThemeStage
 func _ready() -> void:
 	set_process(false)
 	renderer = get_parent() as ThemeStage
-	if Engine.has_singleton("CashDrivePreview"):
-		host = Engine.get_singleton("CashDrivePreview")
-		renderer.set_host_guard(Callable(host, "is_allowed"))
-		host.connect("frame_changed", _refresh)
-		_refresh()
+	# Children become ready before their parent. Wait until the stage and the first frame exist
+	# before touching the Android plugin, so no host frame reaches a half-built stage.
+	await get_tree().process_frame
+	if not is_inside_tree() or not Engine.has_singleton("CashDrivePreview"):
+		return
+	host = Engine.get_singleton("CashDrivePreview")
+	renderer.set_host_guard(Callable(host, "is_allowed"))
+	host.connect("frame_changed", _refresh)
+	_refresh()
 
 func _refresh() -> void:
 	# Read the latest atomic frame instead of trusting an older queued signal payload.
