@@ -8,6 +8,10 @@ const MODES := ["STATIC", "PREVIEW"]
 const THEMES := ["day", "night"]
 const MODEL_PATH := "res://assets/nc/%s/model.glb"
 const STRIKE_SECONDS := 1.4
+## Motion follows speed up to a cap, so going faster than this adds nothing.
+const MIN_RATE := 0.6
+const MAX_RATE := 1.6
+const RATE_CAP_KPH := 60.0
 const CAMERA_FOV := 28.0
 const CAMERA_LIFT := 0.2
 const TINT := {"day": Color(1, 1, 1), "night": Color(0.74, 0.76, 0.86)}
@@ -24,6 +28,7 @@ var reduced_motion := false
 var safety_allowed := false
 var generation_id := -1
 var phase := 0.0
+var motion_rate := MIN_RATE
 var host_guard := Callable()
 
 var _pivot: Node3D
@@ -82,6 +87,7 @@ func apply_request(request: Dictionary) -> bool:
 	mode = request["mode"]
 	theme_name = request["theme"]
 	reduced_motion = request["reducedMotion"]
+	motion_rate = lerpf(MIN_RATE, MAX_RATE, clampf(float(request.get("speedKph", 0.0)) / RATE_CAP_KPH, 0.0, 1.0))
 	_apply_look()
 	_update_processing()
 	return true
@@ -112,6 +118,10 @@ func _valid_content(request: Dictionary) -> bool:
 	var viewport: Dictionary = request["viewport"]
 	if not viewport.has("width") or not viewport.has("height"):
 		return false
+	if request.has("speedKph"):
+		var speed: Variant = request["speedKph"]
+		if (typeof(speed) != TYPE_INT and typeof(speed) != TYPE_FLOAT) or not is_finite(float(speed)) or float(speed) < 0.0:
+			return false
 	for dimension in [viewport["width"], viewport["height"]]:
 		var dimension_type := typeof(dimension)
 		if (dimension_type != TYPE_INT and dimension_type != TYPE_FLOAT) or not is_finite(float(dimension)) or float(dimension) <= 0.0:
@@ -136,7 +146,7 @@ func _process(delta: float) -> void:
 	if mode != "PREVIEW" or not safety_allowed or reduced_motion or not is_visible_in_tree() or (host_guard.is_valid() and not bool(host_guard.call())):
 		_force_static()
 		return
-	phase += delta
+	phase += delta * motion_rate
 	_animate()
 
 func _force_static() -> void:
