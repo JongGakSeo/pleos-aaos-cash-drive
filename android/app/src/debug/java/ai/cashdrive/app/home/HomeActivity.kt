@@ -23,9 +23,10 @@ import androidx.fragment.app.FragmentActivity
 import ai.cashdrive.app.BuildConfig
 import ai.cashdrive.app.MainActivity
 import ai.cashdrive.app.render.PreviewPlugin
-import ai.cashdrive.app.session.DemoSessionHost
-import ai.cashdrive.core.safety.SafetyState
-import ai.cashdrive.core.session.CashDriveState
+import ai.cashdrive.app.session.PlaybackSessionHost
+import ai.cashdrive.core.playback.PlaybackState
+import ai.cashdrive.core.playback.VehicleState
+import ai.cashdrive.core.playback.VehicleStatus
 import org.godotengine.godot.Godot
 import org.godotengine.godot.GodotFragment
 import org.godotengine.godot.GodotHost
@@ -38,14 +39,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Godot engine and the LOCAL_MOCK session are debug dependencies. Runs in its own process so the
  * engine initializes once and the process ends with the screen.
  */
-class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay.Listener {
+class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdPlayer.Listener {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var view: HomeView
-    private lateinit var host: DemoSessionHost
-    private lateinit var autoplay: AdAutoplay
+    private lateinit var host: PlaybackSessionHost
+    private lateinit var autoplay: AdPlayer
     private var subscription: AutoCloseable? = null
-    private var state: CashDriveState? = null
-    private var adProgress: AdAutoplay.Progress? = null
+    private var state: PlaybackState? = null
+    private var adProgress: AdPlayer.Progress? = null
+    private var permissionAsked = false
     private var fragment: GodotFragment? = null
     private var plugin: PreviewPlugin? = null
     private var generation = 0L
@@ -75,8 +77,9 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
         view = HomeView(this, this)
         view.setLock("차량 상태를 확인하고 있어요", "확인되면 바로 이어서 보여 드려요")
         setContentView(view.root)
-        host = DemoSessionHost(this, ACCOUNT)
-        autoplay = AdAutoplay(host.ui, PrefsPositions(), this)
+        host = PlaybackSessionHost(this, ACCOUNT)
+        autoplay = AdPlayer(host.ui, this)
+        view.setLockAction("권한 허용") { askSpeedPermission(force = true) }
         if (BuildConfig.DEMO_SIGNALS) addDemoChip()
         view.root.setOnApplyWindowInsetsListener { root, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
@@ -104,12 +107,29 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
         if (!::host.isInitialized) return
         host.start()
         subscription = host.ui.observe { snapshot -> main.post { onState(snapshot) } }
+        askSpeedPermission(force = false)
+    }
+
+    /** Speed is a runtime permission on AAOS; without it the vehicle state stays unknown and locked. */
+    private fun askSpeedPermission(force: Boolean) {
+        if (BuildConfig.DEMO_SIGNALS || host.speedPermissionGranted) return
+        if (permissionAsked && !force) return
+        permissionAsked = true
+        host.requestSpeedPermission(this, REQUEST_SPEED)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_SPEED) host.refreshSpeedPermission()
+        render()
     }
 
     override fun onResume() {
         super.onResume()
         if (!::host.isInitialized) return
         resumed = true
+        host.refreshSpeedPermission()
         autoplay.hold(view.menuOpen || view.settingsOpen)
         state?.let { autoplay.onState(it) }
         startTicker()
@@ -128,12 +148,14 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
     }
 
     override fun onStop() {
+        if (::host.isInitialized) autoplay.hold(true)
         subscription?.close(); subscription = null
         if (::host.isInitialized) host.stop()
         super.onStop()
     }
 
     override fun onDestroy() {
+        if (::host.isInitialized) host.close()
         plugin?.publish("", false)
         super.onDestroy()
         if (Application.getProcessName() == "$packageName:home" && engineClaimed.get()) Process.killProcess(Process.myPid())
@@ -149,9 +171,9 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
         super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
     }
 
-    private fun onState(snapshot: CashDriveState) {
+    private fun onState(snapshot: PlaybackState) {
         state = snapshot
-        if (!snapshot.actionsAllowed && (view.menuOpen || view.settingsOpen)) view.closeOverlay()
+        if (!menusAllowed(snapshot) && (view.menuOpen || view.settingsOpen)) view.closeOverlay()
         autoplay.hold(!resumed || view.menuOpen || view.settingsOpen)
         autoplay.onState(snapshot)
         startTicker()
@@ -161,13 +183,17 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
     private fun render() {
         val current = state ?: return
         view.setTheme(current.themeId, night)
-        view.setFigures(current.confirmedPoints, current.tripCandidatePoints, current.remainingAdCount)
-        val label = when (current.safetyState) {
-            SafetyState.PARKED_ALLOWED, SafetyState.STOPPED_UNQUALIFIED -> VehicleLabel.STOPPED
-            SafetyState.RESTRICTED -> VehicleLabel.DRIVING
-            SafetyState.UNKNOWN -> VehicleLabel.CHECKING
+        view.setFigures(current.totalPoints, current.tripCandidatePoints, current.remainingAdCount)
+        val label = when (current.vehicleState) {
+            VehicleState.STOPPED_PARKED, VehicleState.STOPPED_WAITING -> VehicleLabel.STOPPED
+            VehicleState.DRIVING -> VehicleLabel.DRIVING
+            VehicleState.UNKNOWN -> VehicleLabel.CHECKING
         }
-        view.setVehicle(label, current.actionsAllowed, adProgress != null)
+        val needsPermission = !BuildConfig.DEMO_SIGNALS && !host.speedPermissionGranted
+        if (needsPermission) view.setLock("차량 속도 권한이 필요해요", "허용하면 정차했을 때 광고로 보상을 받을 수 있어요")
+        else view.setLock("차량 상태를 확인하고 있어요", "확인되면 바로 이어서 보여 드려요")
+        view.showLockAction(needsPermission)
+        view.setVehicle(label, menusAllowed(current), adProgress != null)
         view.setAd(adProgress, sound())
         publishScene()
     }
@@ -178,16 +204,18 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
         render()
     }
 
+    private fun menusAllowed(current: PlaybackState) = current.storageAvailable && current.vehicle.parkedActionsAllowed
+
     // Scene: motion only while the scene is on screen and the vehicle state allows it.
     private fun publishScene() {
         val current = state
-        val safety = current?.safetyState ?: SafetyState.UNKNOWN
-        val sceneShown = resumed && safety != SafetyState.UNKNOWN && adProgress == null
-        val motionBySafety = when (safety) {
-            SafetyState.PARKED_ALLOWED, SafetyState.STOPPED_UNQUALIFIED -> true
+        val vehicle = current?.vehicleState ?: VehicleState.UNKNOWN
+        val sceneShown = resumed && vehicle != VehicleState.UNKNOWN && adProgress == null
+        val motionBySafety = when (vehicle) {
+            VehicleState.STOPPED_PARKED, VehicleState.STOPPED_WAITING -> true
             // User decision 2026-11-07: demo builds keep moving while driving; vehicle stays still.
-            SafetyState.RESTRICTED -> BuildConfig.FLAVOR != "vehicle"
-            SafetyState.UNKNOWN -> false
+            VehicleState.DRIVING -> BuildConfig.FLAVOR != "vehicle"
+            VehicleState.UNKNOWN -> false
         }
         val motion = sceneShown && motionBySafety && !reduceMotion() && !view.menuOpen && !view.settingsOpen
         generation += 1
@@ -196,7 +224,7 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
             .put("mode", if (motion) "PREVIEW" else "STATIC")
             .put("theme", if (night) "night" else "day")
             .put("reducedMotion", reduceMotion())
-            .put("speedKph", 0)
+            .put("speedKph", current?.speedKph ?: 0.0)
             .put("generationId", generation)
             .put("viewport", JSONObject().put("width", maxOf(1, view.sceneHost.width)).put("height", maxOf(1, view.sceneHost.height)))
             .toString()
@@ -233,8 +261,8 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
         if (resumed && autoplay.playing) { lastTick = SystemClock.uptimeMillis(); main.postDelayed(ticker, TICK_MS) }
     }
 
-    // AdAutoplay.Listener
-    override fun onProgress(progress: AdAutoplay.Progress?) {
+    // AdPlayer.Listener
+    override fun onProgress(progress: AdPlayer.Progress?) {
         val changed = (progress == null) != (adProgress == null)
         adProgress = progress
         view.setAd(progress, sound())
@@ -252,7 +280,7 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
     // HomeView.Actions
     override fun onThemeMenu() {
         val current = state ?: return
-        if (!current.actionsAllowed) return
+        if (!menusAllowed(current)) return
         if (view.menuOpen) { onCloseOverlay(); return }
         view.openThemeMenu(current.themeId, night)
         autoplay.hold(true); publishScene()
@@ -264,7 +292,7 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
     }
 
     override fun onSettings() {
-        if (state?.actionsAllowed != true) return
+        if (state?.let(::menusAllowed) != true) return
         view.openSettings(sound(), reduceMotion())
         autoplay.hold(true); publishScene()
     }
@@ -309,26 +337,23 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
     }
 
     private fun showDemoTools() {
+        fun vehicle(state: VehicleState, speed: Double, restrictions: Int, requiresDo: Boolean) =
+            host.updateMockVehicle(VehicleStatus(state, speed, connected = true, speedPermissionGranted = true,
+                activeRestrictions = restrictions, requiresDistractionOptimization = requiresDo))
         val tools = listOf<Pair<String, () -> Unit>>(
-            "주차" to { host.updateMockSafety(SafetyState.PARKED_ALLOWED) },
-            "신호 대기" to { host.updateMockSafety(SafetyState.STOPPED_UNQUALIFIED) },
-            "주행" to { host.updateMockSafety(SafetyState.RESTRICTED) },
-            "상태 미확인" to { host.updateMockSafety(SafetyState.UNKNOWN) },
-            "주행 거리 2 km 추가 (주차 중)" to {
+            "주차" to { vehicle(VehicleState.STOPPED_PARKED, 0.0, 0, false) },
+            "신호 대기" to { vehicle(VehicleState.STOPPED_WAITING, 0.0, 0, false) },
+            "주행 42 km/h" to { vehicle(VehicleState.DRIVING, 42.0, DRIVING_RESTRICTIONS, true) },
+            "상태 미확인" to { host.updateMockVehicle(VehicleStatus()) },
+            "광고 2편 추가" to {
                 val stamp = System.currentTimeMillis()
-                host.addMockDistance("demo-$stamp-1"); host.addMockDistance("demo-$stamp-2")
+                host.enqueueMockAd("demo-$stamp-1"); host.enqueueMockAd("demo-$stamp-2")
             },
             "개발 화면 열기" to { startActivity(Intent(this, MainActivity::class.java)) },
         )
         AlertDialog.Builder(this).setTitle("시연 도구").setItems(tools.map { it.first }.toTypedArray()) { _, which ->
             tools[which].second()
         }.show()
-    }
-
-    private inner class PrefsPositions : AdAutoplay.PositionStore {
-        override fun load(ticketId: String) = prefs.getLong("adpos:$ticketId", 0L)
-        override fun save(ticketId: String, positionMs: Long) { prefs.edit().putLong("adpos:$ticketId", positionMs).apply() }
-        override fun clear(ticketId: String) { prefs.edit().remove("adpos:$ticketId").apply() }
     }
 
     // GodotHost
@@ -342,6 +367,9 @@ class HomeActivity : FragmentActivity(), GodotHost, HomeView.Actions, AdAutoplay
 
     private companion object {
         const val ACCOUNT = "demo-home"
+        const val REQUEST_SPEED = 41
+        /** AAOS baseline driving restrictions (UX_RESTRICTIONS_FULLY_RESTRICTED). */
+        const val DRIVING_RESTRICTIONS = 0x1FF
         const val TICK_MS = 100L
         val engineClaimed = AtomicBoolean(false)
     }
