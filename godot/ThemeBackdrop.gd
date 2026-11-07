@@ -5,15 +5,15 @@ class_name ThemeBackdrop
 const PALETTES := {
 	"horse": {
 		"day": {"sky1": "a8dbe6", "sky2": "f1f6d8", "far": "a6cf85", "near": "79b468", "ground": "5f9c55", "sun": "fff2bf", "cloud": "ffffff"},
-		"night": {"sky1": "12324a", "sky2": "3c6d6a", "far": "1f4a3f", "near": "163a31", "ground": "0f2c25", "sun": "f3e3a8", "cloud": "5f8a8a"},
+		"night": {"sky1": "1d4566", "sky2": "4f8a85", "far": "2b5f50", "near": "214c40", "ground": "1a3d33", "sun": "f3e3a8", "cloud": "5f8a8a"},
 	},
 	"mine": {
 		"day": {"sky1": "8a5a36", "sky2": "f2c98b", "far": "a8744a", "near": "8a5a36", "ground": "b89467", "sun": "fff0c0", "cloud": "0b7f7c"},
-		"night": {"sky1": "2c1a0f", "sky2": "6a3f1c", "far": "241409", "near": "33200f", "ground": "1d120b", "sun": "f2a83b", "cloud": "49d6d0"},
+		"night": {"sky1": "3a2414", "sky2": "8a5526", "far": "33200f", "near": "45301a", "ground": "2c1d12", "sun": "f2a83b", "cloud": "49d6d0"},
 	},
 	"mining": {
 		"day": {"sky1": "f5d9b0", "sky2": "f9ecd4", "far": "d99a63", "near": "c47b4b", "ground": "b3683f", "sun": "fff0b8", "cloud": "fff0b8"},
-		"night": {"sky1": "1a0f12", "sky2": "3a1d18", "far": "2f1712", "near": "43211a", "ground": "4f2a1f", "sun": "f4c23d", "cloud": "f4c23d"},
+		"night": {"sky1": "2a171a", "sky2": "5a2e24", "far": "45231b", "near": "5c2f24", "ground": "6a382a", "sun": "f4c23d", "cloud": "f4c23d"},
 	},
 }
 
