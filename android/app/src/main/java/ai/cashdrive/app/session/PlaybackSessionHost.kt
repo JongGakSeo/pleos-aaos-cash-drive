@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import ai.cashdrive.app.BuildConfig
 import ai.cashdrive.core.playback.*
 
-/** UI v2 lifecycle bridge. Actual video/audio focus belong to Claude UI. Debug LOCAL_MOCK only. */
+/** UI v2 lifecycle bridge. Actual video/audio focus belong to Claude UI. Explicit LOCAL_MOCK only. */
 class PlaybackSessionHost(context: Context, accountId: String) : AutoCloseable {
     private val context = context.applicationContext
     private val store: SqlitePlaybackAccountStore
@@ -17,7 +17,7 @@ class PlaybackSessionHost(context: Context, accountId: String) : AutoCloseable {
     val speedPermissionGranted: Boolean get() = context.checkSelfPermission(SPEED_PERMISSION) == PackageManager.PERMISSION_GRANTED
 
     init {
-        check(BuildConfig.DEBUG) { "LOCAL_MOCK sessions are debug-only" }
+        check(BuildConfig.LOCAL_MOCK) { "This build does not enable LOCAL_MOCK sessions" }
         store = SqlitePlaybackAccountStore(context)
         session = MockPlaybackSession(accountId, store)
     }
