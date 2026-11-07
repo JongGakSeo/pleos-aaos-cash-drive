@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+.tools/
+.workspace.local.json
+**/local.properties
+**/.gradle/
+**/.kotlin/
+**/.godot/
+**/build/
+**/__pycache__/
+*.sqlite3*
+*.keystore
+*.jks
+*.log
+.DS_Store
+
+# Ignored local links into the master checkout
+.tools
+/docs
+/.agents

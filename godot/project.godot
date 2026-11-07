@@ -1,0 +1,16 @@
+; Cash Drive renderer-only G3 spike. Native Android owns all safety decisions.
+config_version=5
+
+[application]
+config/name="Cash Drive Renderer"
+run/main_scene="res://main.tscn"
+
+[display]
+window/size/viewport_width=840
+window/size/viewport_height=1184
+window/size/resizable=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
