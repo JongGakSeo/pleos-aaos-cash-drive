@@ -54,13 +54,20 @@ val exportGodotPack by tasks.registering(Exec::class) {
     val projectDir = rootProject.file("../godot")
     val pack = layout.buildDirectory.file("generated/godotAssets/cash_drive.pck")
     inputs.files(fileTree(projectDir) {
-        include("**/*.gd", "**/*.tscn", "project.godot", "export_presets.cfg")
-        exclude(".godot/**", "tests/**")
+        include("**/*.gd", "**/*.tscn", "**/*.glb", "**/*.import", "**/*.png", "project.godot", "export_presets.cfg")
+        exclude(".godot/**", "tests/**", "tools/**")
     })
     outputs.file(pack)
-    doFirst { pack.get().asFile.parentFile.mkdirs() }
     val toolsDir = rootProject.file(providers.environmentVariable("CASHDRIVE_TOOLS_ROOT").orElse("../.tools").get())
-    commandLine(toolsDir.resolve("godot/Godot.app/Contents/MacOS/Godot").absolutePath,
+    val godotExecutable = toolsDir.resolve("godot/Godot.app/Contents/MacOS/Godot").absolutePath
+    doFirst {
+        pack.get().asFile.parentFile.mkdirs()
+        // Cold worktrees need imported GLB/texture resources before the Android export.
+        project.exec {
+            commandLine(godotExecutable, "--headless", "--editor", "--import", "--path", projectDir.absolutePath)
+        }
+    }
+    commandLine(godotExecutable,
         "--headless", "--path", projectDir.absolutePath, "--export-pack", "Android PCK", pack.get().asFile.absolutePath)
 }
 tasks.configureEach {
