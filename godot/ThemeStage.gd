@@ -14,7 +14,11 @@ const MAX_RATE := 1.6
 const RATE_CAP_KPH := 60.0
 const CAMERA_FOV := 28.0
 const CAMERA_LIFT := 0.2
-const TINT := {"day": Color(1, 1, 1), "night": Color(0.74, 0.76, 0.86)}
+## Soft ambient fill plus one key light keeps the clay look bright without real-time shadows.
+const LIGHT := {
+	"day": {"ambient": Color(1.0, 0.98, 0.95), "ambient_energy": 0.95, "key": Color(1.0, 0.96, 0.9), "key_energy": 1.15},
+	"night": {"ambient": Color(0.86, 0.88, 1.0), "ambient_energy": 0.8, "key": Color(1.0, 0.9, 0.78), "key_energy": 0.95},
+}
 ## Effect anchors as fractions of the model's front view: x from left, y from top.
 const SPARK_AT := {"horse": Vector2(0.32, 0.92), "mine": Vector2(0.70, 0.42), "mining": Vector2(0.39, 0.25)}
 const SPARK_COLOR := {"horse": Color("c9dd8b"), "mine": Color("49d6d0"), "mining": Color("f4c23d")}
@@ -37,6 +41,8 @@ var _camera: Camera3D
 var _backdrop: ThemeBackdrop
 var _sparks: CPUParticles3D
 var _glow: Sprite3D
+var _environment: Environment
+var _key_light: DirectionalLight3D
 var _model_size := Vector3(2, 2, 2)
 var _last_strike := 0
 
@@ -46,11 +52,16 @@ func _ready() -> void:
 	_backdrop = ThemeBackdrop.new()
 	layer.add_child(_backdrop)
 	add_child(layer)
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_CANVAS
+	_environment = Environment.new()
+	_environment.background_mode = Environment.BG_CANVAS
+	_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	var world := WorldEnvironment.new()
-	world.environment = environment
+	world.environment = _environment
 	add_child(world)
+	_key_light = DirectionalLight3D.new()
+	_key_light.rotation_degrees = Vector3(-38, -32, 0)
+	_key_light.shadow_enabled = false
+	add_child(_key_light)
 	_camera = Camera3D.new()
 	_camera.fov = CAMERA_FOV
 	add_child(_camera)
@@ -243,10 +254,17 @@ func _apply_look() -> void:
 	var mesh_node := _first_mesh(_model)
 	var source := mesh_node.mesh.surface_get_material(0)
 	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_texture = (source as BaseMaterial3D).albedo_texture
-	material.albedo_color = TINT[theme_name]
+	material.normal_enabled = (source as BaseMaterial3D).normal_texture != null
+	material.normal_texture = (source as BaseMaterial3D).normal_texture
+	material.roughness = 0.82
+	material.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	mesh_node.material_override = material
+	var light: Dictionary = LIGHT[theme_name]
+	_environment.ambient_light_color = light["ambient"]
+	_environment.ambient_light_energy = light["ambient_energy"]
+	_key_light.light_color = light["key"]
+	_key_light.light_energy = light["key_energy"]
 	_backdrop.configure(skin_id, theme_name)
 
 func _layout() -> void:
@@ -260,9 +278,10 @@ func _place_camera(orbit: float) -> void:
 		return
 	var aspect := view.x / view.y
 	var is_wide := aspect >= 1.4
-	var top := 0.11
-	var bottom := 0.04 if is_wide else 0.19
-	var right := 0.285 if is_wide else 0.0
+	# Matches the Pleos page navigation (112dp), bottom figures (176dp) and wide side panel (440dp).
+	var top := 0.14 if is_wide else 0.095
+	var bottom := 0.03 if is_wide else 0.15
+	var right := 0.27 if is_wide else 0.0
 	var usable := 1.0 - top - bottom
 	var half_tan := tan(deg_to_rad(CAMERA_FOV) * 0.5)
 	var by_height := _model_size.y * 1.08 / (usable * 0.92) / (2.0 * half_tan)
