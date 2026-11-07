@@ -33,7 +33,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
     useLibrary("android.car")
     androidResources { noCompress += "pck" }
-    sourceSets.getByName("debug").assets.srcDir(layout.buildDirectory.dir("generated/godotAssets"))
 }
 
 androidComponents {
@@ -70,6 +69,9 @@ val exportGodotPack by tasks.registering(Exec::class) {
     commandLine(godotExecutable,
         "--headless", "--path", projectDir.absolutePath, "--export-pack", "Android PCK", pack.get().asFile.absolutePath)
 }
+android.sourceSets.getByName("debug").assets.srcDir(layout.buildDirectory.dir("generated/godotAssets"))
 tasks.configureEach {
-    if (name.matches(Regex("merge.*DebugAssets"))) dependsOn(exportGodotPack)
+    // AGP 8.7.3 model writers and lint analysis/report tasks read the generated assets.
+    if (name.matches(Regex("merge.*DebugAssets")) ||
+        (name.contains("Debug") && name.contains("lint", ignoreCase = true))) dependsOn(exportGodotPack)
 }
