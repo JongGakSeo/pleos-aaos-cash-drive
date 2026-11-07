@@ -7,6 +7,9 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 /** Local server must already be running. Synthetic API exercise, never an ad-provider proof. */
 @RunWith(AndroidJUnit4::class)
@@ -38,9 +41,31 @@ class SandboxIntegrationTest {
             assertTrue(completion.accepted)
             assertEquals("NON_PROVIDER_SANDBOX", completion.source)
             assertEquals(0L, api.wallet(login.accessToken).confirmedPoints)
+            // Simulate a lost response body after the server commits: deliberately do not
+            // consume its JSON. Recover using the original persisted operation key.
+            val request = (URL("http://10.0.2.2:8787/v1/reward-claims").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; doOutput = true; connectTimeout = 5000; readTimeout = 5000
+                setRequestProperty("Authorization", "Bearer ${login.accessToken}")
+                setRequestProperty("Idempotency-Key", "claim-$id")
+                setRequestProperty("Content-Type", "application/json")
+            }
+            try {
+                val body = JSONObject().put("schemaVersion", 1).put("rewardTicketId", ticket.id)
+                    .put("adSessionId", ad.id).put("userConfirmed", true).toString().toByteArray()
+                request.setFixedLengthStreamingMode(body.size)
+                request.outputStream.use { it.write(body) }
+                assertEquals(200, request.responseCode)
+            } finally { request.disconnect() }
             val claim = api.claimReward(login.accessToken, ticket.id, ad.id, "claim-$id")
             assertEquals("CREDITED", claim.status)
             assertEquals(claim, api.claimReward(login.accessToken, ticket.id, ad.id, "claim-$id"))
+            try {
+                api.claimReward(login.accessToken, ticket.id, ad.id, "duplicate-$id")
+                fail("A different operation key must not start a second claim")
+            } catch (error: SandboxApiException) {
+                assertEquals(409, error.httpStatus)
+                assertEquals("claim_already_started", error.errorCode)
+            }
             assertEquals(10L, api.wallet(login.accessToken).confirmedPoints)
             api.logout(login.accessToken, vault)
             assertNull(vault.load())
