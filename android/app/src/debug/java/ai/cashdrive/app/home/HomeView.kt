@@ -99,6 +99,7 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private val lock = LinearLayout(context)
     private val lockTitle = TextView(context)
     private val lockBody = TextView(context)
+    private val lockButton = TextView(context)
     private var hideToast: Runnable? = null
 
     var menuOpen = false; private set
@@ -161,12 +162,12 @@ class HomeView(private val context: Context, private val actions: Actions) {
         figures[2].set("남은 광고", "${remaining}개")
     }
 
-    fun setAd(progress: AdAutoplay.Progress?, sound: Boolean) {
+    fun setAd(progress: AdPlayer.Progress?, sound: Boolean) {
         ad.visibility = if (progress == null) View.GONE else View.VISIBLE
         if (progress == null) return
         adTitle.text = "광고 예시 ${progress.index}"
-        adSegments.set(progress.total, progress.index - 1, progress.positionMs.toFloat() / progress.lengthMs)
-        val left = ((progress.lengthMs - progress.positionMs + 999) / 1000).coerceAtLeast(0)
+        adSegments.set(progress.total, progress.index - 1, progress.positionMs.toFloat() / progress.durationMs)
+        val left = ((progress.durationMs - progress.positionMs + 999) / 1000).coerceAtLeast(0)
         adTime.text = "${progress.index}/${progress.total} · 0:%02d 남음".format(left)
         (adSound.getChildAt(0) as ImageView).setImageResource(if (sound) R.drawable.ic_home_sound else R.drawable.ic_home_mute)
         adSound.contentDescription = if (sound) "소리 끄기" else "소리 켜기"
@@ -246,6 +247,17 @@ class HomeView(private val context: Context, private val actions: Actions) {
 
     fun setLock(title: String, body: String) { lockTitle.text = title; lockBody.text = body }
 
+    fun setLockAction(label: String, action: () -> Unit) {
+        lockButton.text = label
+        lockButton.pressable(action)
+    }
+
+    fun showLockAction(show: Boolean) {
+        lockButton.visibility = if (show) View.VISIBLE else View.GONE
+        lockButton.background = rounded(tokens.filled, 14f)
+        lockButton.setTextColor(tokens.onFilled)
+    }
+
     private fun layout(width: Int, height: Int) {
         val nowWide = width.toFloat() / height >= 1.4f
         wide = nowWide
@@ -310,9 +322,9 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private fun buildAd() {
         ad.setBackgroundColor(0xFF0E0F11.toInt())
         val center = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        style(adTitle, 48, bold = true); adTitle.setTextColor(Color.WHITE)
+        style(adTitle, 48, bold = true); adTitle.setTextColor(Color.WHITE); adTitle.gravity = Gravity.CENTER
         center.addView(adTitle)
-        center.addView(text("실제 광고 소재가 재생될 자리", 26, 0xB8FFFFFF.toInt()))
+        center.addView(text("실제 광고 소재가 재생될 자리", 26, 0xB8FFFFFF.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
         ad.addView(center, match())
         val chip = text("광고", 24, Color.WHITE, bold = true).apply {
             background = rounded(0x29FFFFFF, 10f); setPadding(dp(16), dp(10), dp(16), dp(10))
@@ -343,6 +355,11 @@ class HomeView(private val context: Context, private val actions: Actions) {
         style(lockTitle, 36, bold = true); style(lockBody, 28)
         lockTitle.gravity = Gravity.CENTER; lockBody.gravity = Gravity.CENTER
         lock.addView(lockTitle); lock.addView(lockBody, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
+        style(lockButton, 28, bold = true)
+        lockButton.gravity = Gravity.CENTER
+        lockButton.setPadding(dp(40), 0, dp(40), 0)
+        lockButton.visibility = View.GONE
+        lock.addView(lockButton, LinearLayout.LayoutParams(-2, dp(88)).apply { topMargin = dp(36) })
         lock.setPadding(dp(48), dp(48), dp(48), dp(48))
     }
 
