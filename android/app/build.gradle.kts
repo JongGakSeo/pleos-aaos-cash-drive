@@ -14,6 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Current project targets: arm64 vehicle and x86_64/arm64 emulators.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     flavorDimensions += "signal"
@@ -57,7 +59,8 @@ val exportGodotPack by tasks.registering(Exec::class) {
     })
     outputs.file(pack)
     doFirst { pack.get().asFile.parentFile.mkdirs() }
-    commandLine(rootProject.file("../.tools/godot/Godot.app/Contents/MacOS/Godot").absolutePath,
+    val toolsDir = rootProject.file(providers.environmentVariable("CASHDRIVE_TOOLS_ROOT").orElse("../.tools").get())
+    commandLine(toolsDir.resolve("godot/Godot.app/Contents/MacOS/Godot").absolutePath,
         "--headless", "--path", projectDir.absolutePath, "--export-pack", "Android PCK", pack.get().asFile.absolutePath)
 }
 tasks.configureEach {
