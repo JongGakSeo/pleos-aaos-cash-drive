@@ -2,16 +2,38 @@ extends Node3D
 class_name ThemeStage
 
 ## Full-screen main theme scene. The native host gates every transition and owns all reward state.
-## Meshes are generated with NC Image to 3D (static, no rig), so motion is whole-model plus effects.
+## Meshes are generated with NC Image to 3D (no skeleton). The horse moves with a vertex-shader fake rig;
+## mine and mining are assembled from separate part meshes that move as small rigid joints.
 const SKINS := ["horse", "mine", "mining"]
 const MODES := ["STATIC", "PREVIEW"]
 const THEMES := ["day", "night"]
 const MODEL_PATH := "res://assets/nc/%s/model.glb"
 ## Neutral-pose models made from the rig sheets move better with the fake joints.
 const MODEL_OVERRIDE := {"horse": "res://assets/nc/parts/horse-rig.glb"}
+const PART_PATH := "res://assets/nc/parts/%s.glb"
+## Themes assembled from separate rigid parts (rig sheets -> Image to 3D, one call per part).
+## w/h: part width or height, at: where the part's pivot sits (base is 2 units wide, ground y=0),
+## pivot: pivot as a fraction of the part's box, rest: resting tilt (deg, around the view axis),
+## move: bob | strike | sway | rock, amp: motion size (deg, or units for bob), speed: cycles per phase second.
+const RIGS := {
+	"mine": [
+		{"part": "mine-base", "w": 2.0, "at": Vector3(0, 0, 0)},
+		{"part": "mine-lantern", "h": 0.3, "at": Vector3(0.22, 0.98, -0.3), "pivot": Vector3(0.5, 1.0, 0.5), "move": "sway", "amp": 5.0, "speed": 0.55},
+		{"part": "mine-cart", "h": 0.36, "at": Vector3(0.55, 0.1, 0.78), "yaw": -30.0, "move": "rock", "amp": 1.5, "speed": 0.7},
+		{"part": "mine-miner", "h": 0.86, "at": Vector3(-0.22, 0.1, 0.32), "yaw": 10.0, "move": "bob", "amp": 0.012, "speed": 1.4},
+		{"part": "mine-pickaxe", "h": 0.42, "at": Vector3(-0.14, 0.71, 0.42), "pivot": Vector3(0.38, 0.02, 0.5), "rest": -20.0, "move": "strike", "amp": 22.0, "speed": 0.7},
+	],
+	"mining": [
+		{"part": "mining-base", "w": 2.0, "at": Vector3(0, 0, 0)},
+		{"part": "mining-wheelbarrow", "h": 0.42, "at": Vector3(0.68, 0.1, 0.45), "yaw": -25.0, "move": "rock", "amp": 1.2, "speed": 0.6},
+		{"part": "mining-miner-c", "h": 0.62, "at": Vector3(-0.62, 0.12, 0.6), "yaw": 20.0, "move": "bob", "amp": 0.01, "speed": 1.6},
+		{"part": "mining-pickaxe", "h": 0.34, "at": Vector3(-0.54, 0.63, 0.7), "pivot": Vector3(0.4, 0.02, 0.5), "rest": -25.0, "move": "strike", "amp": 20.0, "speed": 0.8},
+		{"part": "mining-miner-b", "h": 0.5, "at": Vector3(0.2, 0.1, 0.62), "yaw": -10.0, "move": "bob", "amp": 0.008, "speed": 1.6, "phase": 0.5},
+	],
+}
 const STRIKE_SECONDS := 1.4
 ## Motion follows speed up to a cap, so going faster than this adds nothing.
-const MIN_RATE := 0.6
+const MIN_RATE := 0.9
 const MAX_RATE := 1.6
 const RATE_CAP_KPH := 60.0
 const CAMERA_FOV := 28.0
@@ -30,9 +52,6 @@ const MOTION_SHADER := preload("res://ThemeMotion.gdshader")
 ## Fake joints per theme (see ThemeMotion.gdshader): pivot x/y, radius, angle | speed, phase, -, on.
 const JOINTS := {
 	"horse": {"gallop": 1, "leg_floor": -0.02, "axis": 1, "yaw": -58.0},
-	"mine": {"a": [Vector4(0.57, 0.55, 0.24, 0.55), Vector4(0.72, 0.0, 0.0, 1.0)]},
-	"mining": {"a": [Vector4(0.30, 0.70, 0.17, 0.9), Vector4(0.8, 0.0, 0.0, 1.0)],
-		"b": [Vector4(0.30, 0.30, 0.12, 0.35), Vector4(0.6, 0.45, 0.0, 1.0)]},
 }
 
 var skin_id := ""
@@ -56,6 +75,8 @@ var _key_light: DirectionalLight3D
 var _motion: ShaderMaterial
 var _model_size := Vector3(2, 2, 2)
 var _last_strike := 0
+## Moving rig parts: {node, base (Transform3D), move, amp, speed, phase}
+var _parts: Array = []
 
 func _ready() -> void:
 	var layer := CanvasLayer.new()
@@ -185,6 +206,8 @@ func _rest_pose() -> void:
 	_pivot.rotation = Vector3.ZERO
 	_pivot.scale = Vector3.ONE
 	_sparks.emitting = false
+	for part in _parts:
+		part["node"].transform = part["base"]
 	if _motion != null:
 		_motion.set_shader_parameter("amount", 0.0)
 	_glow.modulate.a = 0.55
@@ -198,25 +221,78 @@ func _animate() -> void:
 	if skin_id == "horse":
 		var stride := phase * 4.4
 		var lift := absf(sin(stride))
-		_pivot.position.y = lift * 0.07
-		_pivot.rotation.z = sin(stride) * 0.035
+		_pivot.position.y = lift * 0.045
+		_pivot.rotation.z = sin(stride) * 0.02
 		_pivot.rotation.x = -cos(stride) * 0.018
-		var squash := 1.0 + (lift - 0.5) * 0.03
+		var squash := 1.0 + (lift - 0.5) * 0.015
 		_pivot.scale = Vector3(2.0 - squash, squash, 2.0 - squash)
 		if int(stride / PI) != _last_strike:
 			_last_strike = int(stride / PI)
 			_sparks.restart()
 	else:
-		var beat := fposmod(phase, STRIKE_SECONDS) / STRIKE_SECONDS
-		var thump := exp(-beat * 9.0)
-		_pivot.rotation.y = sin(phase * 0.5) * 0.07
-		_pivot.scale = Vector3(1.0 + thump * 0.006, 1.0 - thump * 0.014, 1.0 + thump * 0.006)
+		_pivot.rotation.y = sin(phase * 0.5) * 0.05
+		_animate_parts()
 		if int(phase / STRIKE_SECONDS) != _last_strike:
 			_last_strike = int(phase / STRIKE_SECONDS)
 			_sparks.restart()
 		_glow.modulate.a = 0.55 + 0.25 * sin(phase * 7.0) * sin(phase * 2.3)
 	_backdrop.set_drift(sin(phase * 0.22))
 	_place_camera(sin(phase * 0.35) * 0.09)
+
+## Small rigid motions only, so the clay parts never stretch.
+func _animate_parts() -> void:
+	for part in _parts:
+		var node: Node3D = part["node"]
+		var base: Transform3D = part["base"]
+		var cycle := fposmod(phase * float(part["speed"]) + float(part["phase"]), 1.0)
+		var wave := sin(cycle * TAU)
+		match part["move"]:
+			"bob":
+				node.transform = base.translated(Vector3(0, absf(wave) * float(part["amp"]), 0))
+			"strike":
+				# Quick downward stroke, slow lift back.
+				var stroke := cycle / 0.25 if cycle < 0.25 else 1.0 - (cycle - 0.25) / 0.75
+				node.transform = base.rotated_local(Vector3.BACK, -deg_to_rad(float(part["amp"])) * smoothstep(0.0, 1.0, stroke))
+			"sway", "rock":
+				node.transform = base.rotated_local(Vector3.BACK, deg_to_rad(float(part["amp"])) * wave)
+
+func _build_rig(spec: Array) -> Node3D:
+	var root := Node3D.new()
+	_parts.clear()
+	for entry in spec:
+		var mount := Node3D.new()
+		var model: Node3D = (load(PART_PATH % entry["part"]) as PackedScene).instantiate()
+		mount.add_child(model)
+		var box := _bounds(model)
+		var factor := float(entry["w"]) / box.size.x if entry.has("w") else float(entry["h"]) / box.size.y
+		model.scale = Vector3.ONE * factor
+		var pivot: Vector3 = entry.get("pivot", Vector3(0.5, 0.0, 0.5))
+		model.position = -(box.position + box.size * pivot) * factor
+		mount.position = entry["at"]
+		mount.rotation_degrees = Vector3(0, float(entry.get("yaw", 0.0)), float(entry.get("rest", 0.0)))
+		root.add_child(mount)
+		if entry.has("move"):
+			_parts.append({"node": mount, "base": mount.transform, "move": entry["move"], "amp": entry["amp"],
+				"speed": entry["speed"], "phase": float(entry.get("phase", 0.0))})
+	return root
+
+## Bounds of every mesh under node, in node's own space.
+func _bounds(node: Node3D) -> AABB:
+	var result := AABB()
+	var first := true
+	var stack: Array = [[node, Transform3D.IDENTITY]]
+	while not stack.is_empty():
+		var item: Array = stack.pop_back()
+		var current: Node = item[0]
+		var xform: Transform3D = item[1]
+		if current is MeshInstance3D and current.mesh != null:
+			var box: AABB = xform * current.mesh.get_aabb()
+			result = box if first else result.merge(box)
+			first = false
+		for child in current.get_children():
+			if child is Node3D:
+				stack.append([child, xform * child.transform])
+	return result
 
 func _set_skin(next: String) -> void:
 	if next == skin_id:
@@ -225,9 +301,13 @@ func _set_skin(next: String) -> void:
 	if _model != null:
 		_model.queue_free()
 		_model = null
-	var scene: PackedScene = load(MODEL_OVERRIDE.get(skin_id, MODEL_PATH % skin_id))
-	_model = scene.instantiate()
-	_model.rotation_degrees.y = float(JOINTS[skin_id].get("yaw", 0.0))
+	_parts.clear()
+	if RIGS.has(skin_id):
+		_model = _build_rig(RIGS[skin_id])
+	else:
+		var scene: PackedScene = load(MODEL_OVERRIDE.get(skin_id, MODEL_PATH % skin_id))
+		_model = scene.instantiate()
+	_model.rotation_degrees.y = float(JOINTS.get(skin_id, {}).get("yaw", 0.0))
 	_pivot.add_child(_model)
 	_normalize_model()
 	_place_effects()
@@ -235,11 +315,10 @@ func _set_skin(next: String) -> void:
 
 ## Scale so the longest side is 2 units, centered on x/z with the base on y=0.
 func _normalize_model() -> void:
-	var mesh_node := _first_mesh(_model)
-	var box := mesh_node.global_transform * mesh_node.mesh.get_aabb()
+	var box := _model.transform * _bounds(_model)
 	var factor := 2.0 / maxf(box.size.x, maxf(box.size.y, box.size.z))
-	_model.scale = Vector3.ONE * factor
-	box = mesh_node.global_transform * mesh_node.mesh.get_aabb()
+	_model.scale *= factor
+	box = _model.transform * _bounds(_model)
 	var center := box.get_center()
 	_model.position -= Vector3(center.x, box.position.y, center.z)
 	_model_size = box.size
@@ -268,6 +347,10 @@ func _place_effects() -> void:
 		_glow.modulate.a = 0.55
 
 func _apply_look() -> void:
+	_apply_light()
+	if RIGS.has(skin_id):
+		_motion = null
+		return
 	var mesh_node := _first_mesh(_model)
 	var source := mesh_node.mesh.surface_get_material(0)
 	var base := source as BaseMaterial3D
@@ -289,6 +372,8 @@ func _apply_look() -> void:
 		_motion.set_shader_parameter("swing_" + key + "_timing", joint[1])
 	_motion.set_shader_parameter("amount", 1.0 if is_processing() else 0.0)
 	mesh_node.material_override = _motion
+
+func _apply_light() -> void:
 	var light: Dictionary = LIGHT[theme_name]
 	_environment.ambient_light_color = light["ambient"]
 	_environment.ambient_light_energy = light["ambient_energy"]
@@ -306,7 +391,7 @@ func _place_camera(orbit: float) -> void:
 	if view.x <= 0.0 or view.y <= 0.0:
 		return
 	var aspect := view.x / view.y
-	var is_wide := aspect >= 1.4
+	var is_wide := aspect >= 1.0
 	# Matches the Pleos page navigation (112dp), bottom figures (176dp) and wide side panel (440dp).
 	var top := 0.14 if is_wide else 0.095
 	var bottom := 0.03 if is_wide else 0.15

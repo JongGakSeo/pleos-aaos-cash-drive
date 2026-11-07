@@ -48,12 +48,12 @@ void vertex() {
 		float side = gallop_axis == 1 ? step(0.5, n.x) : step(0.5, n.z);
 		float phase = front * 3.1416 + side * 1.2;
 		float s = sin(t * 9.0 + phase);
-		float swing = s * reach * legs * 0.16 * box_size.y * amount;
+		float swing = s * reach * legs * 0.11 * box_size.y * amount;
 		if (gallop_axis == 1) { p.z += swing; } else { p.x += swing; }
-		p.y += max(0.0, -s) * reach * legs * 0.05 * box_size.y * amount;
+		p.y += max(0.0, -s) * reach * legs * 0.03 * box_size.y * amount;
 		// Tail and mane ripple.
 		float tail = smoothstep(0.68, 0.8, n.x) * smoothstep(0.4, 0.55, n.y);
-		p.y += sin(t * 8.0 + n.x * 9.0) * tail * 0.035 * box_size.y * amount;
+		p.y += sin(t * 8.0 + n.x * 9.0) * tail * 0.025 * box_size.y * amount;
 		float mane = smoothstep(0.55, 0.75, n.y) * (1.0 - smoothstep(0.45, 0.6, n.x));
 		p.x += sin(t * 9.0 + n.y * 6.0) * mane * 0.012 * box_size.y * amount;
 	}

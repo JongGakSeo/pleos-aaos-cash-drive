@@ -90,7 +90,7 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private val dock = LinearLayout(context)
     private val figures = List(3) { Figure(it) }
     private val ad = FrameLayout(context)
-    private val adTitle = TextView(context)
+    private val adFrame = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
     private val adSub = TextView(context)
     private val adSegments = SegmentsView(context)
     private val adTime = TextView(context)
@@ -166,10 +166,13 @@ class HomeView(private val context: Context, private val actions: Actions) {
     fun setAd(progress: AdPlayer.Progress?, sound: Boolean) {
         ad.visibility = if (progress == null) View.GONE else View.VISIBLE
         if (progress == null) return
-        // LOCAL_MOCK creative: a public-service card set made by the team, not a third-party ad.
-        val cards = PSA_CARDS
-        val card = cards[((progress.positionMs * cards.size) / progress.durationMs.coerceAtLeast(1)).toInt().coerceIn(0, cards.size - 1)]
-        adTitle.text = card
+        // LOCAL_MOCK creative: road-guide screens from a police public-service video, shown on the
+        // original video's timeline scaled to the mock ad length.
+        val at = progress.positionMs.toFloat() / progress.durationMs.coerceAtLeast(1) * PSA_TOTAL
+        var acc = 0f
+        val frame = PSA_FRAMES.indexOfFirst { acc += it.seconds; at < acc }.let { if (it < 0) PSA_FRAMES.lastIndex else it }
+        adFrame.setImageResource(PSA_FRAMES[frame].drawable)
+        adFrame.contentDescription = PSA_FRAMES[frame].caption
         adSub.text = PSA_SOURCE
         adSegments.set(progress.total, progress.index - 1, progress.positionMs.toFloat() / progress.durationMs)
         val left = ((progress.durationMs - progress.positionMs + 999) / 1000).coerceAtLeast(0)
@@ -264,7 +267,7 @@ class HomeView(private val context: Context, private val actions: Actions) {
     }
 
     private fun layout(width: Int, height: Int) {
-        val nowWide = width.toFloat() / height >= 1.4f
+        val nowWide = width.toFloat() / height >= 1.0f
         wide = nowWide
         nav.layoutParams = FrameLayout.LayoutParams(-1, dp(NAV), Gravity.TOP)
         val sceneParams = FrameLayout.LayoutParams(-1, -1).apply {
@@ -327,11 +330,9 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private fun buildAd() {
         ad.setBackgroundColor(0xFF0E0F11.toInt())
         val center = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        style(adTitle, 40, bold = true); adTitle.setTextColor(Color.WHITE); adTitle.gravity = Gravity.CENTER
-        center.addView(adTitle)
-        adTitle.setLineSpacing(0f, 1.25f)
-        center.setPadding(dp(48), 0, dp(48), 0)
-        style(adSub, 22); adSub.setTextColor(0xB8FFFFFF.toInt()); adSub.gravity = Gravity.CENTER; adSub.setPadding(0, dp(24), 0, 0)
+        center.addView(adFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+        center.setPadding(dp(120), dp(24), dp(120), dp(84))
+        style(adSub, 20); adSub.setTextColor(0xB8FFFFFF.toInt()); adSub.gravity = Gravity.CENTER; adSub.setPadding(0, dp(12), 0, 0)
         center.addView(adSub)
         ad.addView(center, match())
         val chip = text("광고", 24, Color.WHITE, bold = true).apply {
@@ -514,14 +515,23 @@ class HomeView(private val context: Context, private val actions: Actions) {
     }
 
     companion object {
-        /** Team-made public-service example. Rules as enforced from 2023-01-22 (Korean Road Traffic Act enforcement rules). */
-        val PSA_CARDS = listOf(
-            "공익 안내\n우회전, 이렇게 하세요",
-            "전방 신호가 빨간불이면\n정지선 앞에서 일단 멈춘 뒤 우회전",
-            "우회전 신호등이 있으면\n초록 화살표일 때만 우회전",
-            "횡단보도에 보행자가 있거나\n건너려 하면 일시정지",
+        class PsaFrame(val drawable: Int, val seconds: Float, val caption: String)
+        /** Road-guide screens (no presenter) from 경기북부경찰청's right-turn video, captions as shown. */
+        val PSA_FRAMES = listOf(
+            PsaFrame(R.drawable.psa_01, 4f, "① 전방 차량 적색신호. 전방 차량신호가 적색일 경우 반드시 일시정지"),
+            PsaFrame(R.drawable.psa_02, 3f, "횡단보도에 보행자가 없다면 서행하며 우회전하시면 되고"),
+            PsaFrame(R.drawable.psa_03, 3f, "이때 보행자가 건너고 있거나 건너려고 한다면"),
+            PsaFrame(R.drawable.psa_04, 4f, "건널 때까지 기다리셨다가 우회전하시면 됩니다."),
+            PsaFrame(R.drawable.psa_05, 2f, "② 우회전 전용 신호기. 우회전 전용 신호기가 설치되어있는 경우에는"),
+            PsaFrame(R.drawable.psa_06, 4f, "신호에 따라 우회전이 가능합니다."),
+            PsaFrame(R.drawable.psa_07, 4f, "③ 전방 차량 신호, 횡단보도 신호 모두 녹색. 전방 차량신호, 횡단보도 신호 모두 초록불일 때"),
+            PsaFrame(R.drawable.psa_08, 6f, "보행자가 없을 때는 서행하며 우회전할 수 있고"),
+            PsaFrame(R.drawable.psa_09, 4f, "횡단보도 앞에서 일시정지 후 보행자의 횡단이 종료되면"),
+            PsaFrame(R.drawable.psa_10, 3f, "그때 우회전이 가능합니다."),
+            PsaFrame(R.drawable.psa_11, 5f, "1월 22일부터 3개월간 계도기간 시행. 모두의 안전을 위해 신호를 꼭 지켜주세요! 경기북부경찰청"),
         )
-        const val PSA_SOURCE = "Cash Drive 제작 공익 안내 예시 · 출처: 경찰청, 대한민국 정책브리핑(2023.1.22 시행)"
+        val PSA_TOTAL = PSA_FRAMES.sumOf { it.seconds.toDouble() }.toFloat()
+        const val PSA_SOURCE = "영상: 경기북부경찰청 제공 · YouTube [올바른 우회전 방법은?] 화면 발췌"
         const val NAV = 112
         const val DOCK = 176
         const val SIDE = 440
