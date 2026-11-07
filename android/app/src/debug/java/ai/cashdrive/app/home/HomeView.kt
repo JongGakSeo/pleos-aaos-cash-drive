@@ -91,6 +91,7 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private val figures = List(3) { Figure(it) }
     private val ad = FrameLayout(context)
     private val adTitle = TextView(context)
+    private val adSub = TextView(context)
     private val adSegments = SegmentsView(context)
     private val adTime = TextView(context)
     private val adSound = iconButton(R.drawable.ic_home_sound, "소리") { actions.onSoundToggle() }
@@ -165,7 +166,11 @@ class HomeView(private val context: Context, private val actions: Actions) {
     fun setAd(progress: AdPlayer.Progress?, sound: Boolean) {
         ad.visibility = if (progress == null) View.GONE else View.VISIBLE
         if (progress == null) return
-        adTitle.text = "광고 예시 ${progress.index}"
+        // LOCAL_MOCK creative: a public-service card set made by the team, not a third-party ad.
+        val cards = PSA_CARDS
+        val card = cards[((progress.positionMs * cards.size) / progress.durationMs.coerceAtLeast(1)).toInt().coerceIn(0, cards.size - 1)]
+        adTitle.text = card
+        adSub.text = PSA_SOURCE
         adSegments.set(progress.total, progress.index - 1, progress.positionMs.toFloat() / progress.durationMs)
         val left = ((progress.durationMs - progress.positionMs + 999) / 1000).coerceAtLeast(0)
         adTime.text = "${progress.index}/${progress.total} · 0:%02d 남음".format(left)
@@ -322,9 +327,12 @@ class HomeView(private val context: Context, private val actions: Actions) {
     private fun buildAd() {
         ad.setBackgroundColor(0xFF0E0F11.toInt())
         val center = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-        style(adTitle, 48, bold = true); adTitle.setTextColor(Color.WHITE); adTitle.gravity = Gravity.CENTER
+        style(adTitle, 40, bold = true); adTitle.setTextColor(Color.WHITE); adTitle.gravity = Gravity.CENTER
         center.addView(adTitle)
-        center.addView(text("실제 광고 소재가 재생될 자리", 26, 0xB8FFFFFF.toInt()).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, 0) })
+        adTitle.setLineSpacing(0f, 1.25f)
+        center.setPadding(dp(48), 0, dp(48), 0)
+        style(adSub, 22); adSub.setTextColor(0xB8FFFFFF.toInt()); adSub.gravity = Gravity.CENTER; adSub.setPadding(0, dp(24), 0, 0)
+        center.addView(adSub)
         ad.addView(center, match())
         val chip = text("광고", 24, Color.WHITE, bold = true).apply {
             background = rounded(0x29FFFFFF, 10f); setPadding(dp(16), dp(10), dp(16), dp(10))
@@ -506,6 +514,14 @@ class HomeView(private val context: Context, private val actions: Actions) {
     }
 
     companion object {
+        /** Team-made public-service example. Rules as enforced from 2023-01-22 (Korean Road Traffic Act enforcement rules). */
+        val PSA_CARDS = listOf(
+            "공익 안내\n우회전, 이렇게 하세요",
+            "전방 신호가 빨간불이면\n정지선 앞에서 일단 멈춘 뒤 우회전",
+            "우회전 신호등이 있으면\n초록 화살표일 때만 우회전",
+            "횡단보도에 보행자가 있거나\n건너려 하면 일시정지",
+        )
+        const val PSA_SOURCE = "Cash Drive 제작 공익 안내 예시 · 출처: 경찰청, 대한민국 정책브리핑(2023.1.22 시행)"
         const val NAV = 112
         const val DOCK = 176
         const val SIDE = 440

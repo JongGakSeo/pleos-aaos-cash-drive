@@ -7,6 +7,8 @@ const SKINS := ["horse", "mine", "mining"]
 const MODES := ["STATIC", "PREVIEW"]
 const THEMES := ["day", "night"]
 const MODEL_PATH := "res://assets/nc/%s/model.glb"
+## Neutral-pose models made from the rig sheets move better with the fake joints.
+const MODEL_OVERRIDE := {"horse": "res://assets/nc/parts/horse-rig.glb"}
 const STRIKE_SECONDS := 1.4
 ## Motion follows speed up to a cap, so going faster than this adds nothing.
 const MIN_RATE := 0.6
@@ -24,6 +26,14 @@ const SPARK_AT := {"horse": Vector2(0.32, 0.92), "mine": Vector2(0.70, 0.42), "m
 const SPARK_COLOR := {"horse": Color("c9dd8b"), "mine": Color("49d6d0"), "mining": Color("f4c23d")}
 const GLOW_AT := {"mine": Vector2(0.27, 0.25), "mining": Vector2(0.75, 0.18)}
 const GLOW_COLOR := {"mine": Color("ffc35c"), "mining": Color("fff0b0")}
+const MOTION_SHADER := preload("res://ThemeMotion.gdshader")
+## Fake joints per theme (see ThemeMotion.gdshader): pivot x/y, radius, angle | speed, phase, -, on.
+const JOINTS := {
+	"horse": {"gallop": 1, "leg_floor": -0.02, "axis": 1, "yaw": -58.0},
+	"mine": {"a": [Vector4(0.57, 0.55, 0.24, 0.55), Vector4(0.72, 0.0, 0.0, 1.0)]},
+	"mining": {"a": [Vector4(0.30, 0.70, 0.17, 0.9), Vector4(0.8, 0.0, 0.0, 1.0)],
+		"b": [Vector4(0.30, 0.30, 0.12, 0.35), Vector4(0.6, 0.45, 0.0, 1.0)]},
+}
 
 var skin_id := ""
 var mode := "STATIC"
@@ -43,6 +53,7 @@ var _sparks: CPUParticles3D
 var _glow: Sprite3D
 var _environment: Environment
 var _key_light: DirectionalLight3D
+var _motion: ShaderMaterial
 var _model_size := Vector3(2, 2, 2)
 var _last_strike := 0
 
@@ -174,11 +185,16 @@ func _rest_pose() -> void:
 	_pivot.rotation = Vector3.ZERO
 	_pivot.scale = Vector3.ONE
 	_sparks.emitting = false
+	if _motion != null:
+		_motion.set_shader_parameter("amount", 0.0)
 	_glow.modulate.a = 0.55
 	_backdrop.set_drift(0.0)
 	_place_camera(0.0)
 
 func _animate() -> void:
+	if _motion != null:
+		_motion.set_shader_parameter("t", phase)
+		_motion.set_shader_parameter("amount", 1.0)
 	if skin_id == "horse":
 		var stride := phase * 4.4
 		var lift := absf(sin(stride))
@@ -209,8 +225,9 @@ func _set_skin(next: String) -> void:
 	if _model != null:
 		_model.queue_free()
 		_model = null
-	var scene: PackedScene = load(MODEL_PATH % skin_id)
+	var scene: PackedScene = load(MODEL_OVERRIDE.get(skin_id, MODEL_PATH % skin_id))
 	_model = scene.instantiate()
+	_model.rotation_degrees.y = float(JOINTS[skin_id].get("yaw", 0.0))
 	_pivot.add_child(_model)
 	_normalize_model()
 	_place_effects()
@@ -253,13 +270,25 @@ func _place_effects() -> void:
 func _apply_look() -> void:
 	var mesh_node := _first_mesh(_model)
 	var source := mesh_node.mesh.surface_get_material(0)
-	var material := StandardMaterial3D.new()
-	material.albedo_texture = (source as BaseMaterial3D).albedo_texture
-	material.normal_enabled = (source as BaseMaterial3D).normal_texture != null
-	material.normal_texture = (source as BaseMaterial3D).normal_texture
-	material.roughness = 0.82
-	material.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
-	mesh_node.material_override = material
+	var base := source as BaseMaterial3D
+	_motion = ShaderMaterial.new()
+	_motion.shader = MOTION_SHADER
+	_motion.set_shader_parameter("albedo_tex", base.albedo_texture)
+	_motion.set_shader_parameter("normal_tex", base.normal_texture)
+	_motion.set_shader_parameter("use_normal", base.normal_texture != null)
+	var box := mesh_node.mesh.get_aabb()
+	_motion.set_shader_parameter("box_min", box.position)
+	_motion.set_shader_parameter("box_size", box.size)
+	var joints: Dictionary = JOINTS[skin_id]
+	_motion.set_shader_parameter("gallop", int(joints.get("gallop", 0)))
+	_motion.set_shader_parameter("leg_floor", float(joints.get("leg_floor", 0.13)))
+	_motion.set_shader_parameter("gallop_axis", int(joints.get("axis", 0)))
+	for key in ["a", "b"]:
+		var joint: Array = joints.get(key, [Vector4.ZERO, Vector4.ZERO])
+		_motion.set_shader_parameter("swing_" + key, joint[0])
+		_motion.set_shader_parameter("swing_" + key + "_timing", joint[1])
+	_motion.set_shader_parameter("amount", 1.0 if is_processing() else 0.0)
+	mesh_node.material_override = _motion
 	var light: Dictionary = LIGHT[theme_name]
 	_environment.ambient_light_color = light["ambient"]
 	_environment.ambient_light_energy = light["ambient_energy"]
