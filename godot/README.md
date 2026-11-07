@@ -1,14 +1,17 @@
 # Cash Drive Godot renderer spike
 
-This is a renderer-only G3 spike. The native Android host owns vehicle signals, UXR policy, lifecycle, and permission checks. `SkinRenderer` receives only an explicit request and never reads vehicle speed, gear, odometer, network, or account data. It renders three lightweight vector skins (`horse`, `mine`, `gpu`); only an explicitly enabled designer `PREVIEW` can animate. Static mode and reduced motion do not process frames. This is not a complete Godot app or a claim of AAOS/Pleos approval.
+This is a renderer-only G3 spike. The native Android host owns vehicle signals, UXR policy, lifecycle, and permission checks. `ThemeStage` receives only an explicit request and never reads vehicle speed, gear, odometer, network, or account data. It renders three lightweight vector skins (`horse`, `mine`, `gpu`); only an explicitly enabled designer `PREVIEW` can animate. Static mode and reduced motion do not process frames. This is not a complete Godot app or a claim of AAOS/Pleos approval.
 
 ## Request contract
 
-`apply_request({skinId, mode, previewSpeedKph, theme, viewport: {width, height}, reducedMotion, generationId})` returns `true` when applied. Skin is `horse|mine|gpu`, mode is `STATIC|PREVIEW`, theme is `day|night`; speed is finite and clamped to 0–120 kph and viewport dimensions must be positive finite numbers. Generation IDs must increase. Stale requests are ignored; malformed requests and unknown skins fail safely to static. The host calls `set_safety_allowed(false)` on every safety restriction, disconnect, or hidden lifecycle state; that immediately resets motion.
+`apply_request({skinId: horse|mine|mining, mode, theme, viewport: {width, height}, reducedMotion, generationId})` returns `true` when applied. Skin is `horse|mine|gpu`, mode is `STATIC|PREVIEW`, theme is `day|night`; speed is finite and clamped to 0–120 kph and viewport dimensions must be positive finite numbers. Generation IDs must increase. Stale requests are ignored; malformed requests and unknown skins fail safely to static. The host calls `set_safety_allowed(false)` on every safety restriction, disconnect, or hidden lifecycle state; that immediately resets motion.
 
 ## Run tests
 
+Run the import once on a fresh checkout so the theme models load.
+
 ```sh
+.tools/godot/Godot.app/Contents/MacOS/Godot --headless --path godot --import
 .tools/godot/Godot.app/Contents/MacOS/Godot --headless --path godot --script res://tests/test_renderer.gd
 ```
 

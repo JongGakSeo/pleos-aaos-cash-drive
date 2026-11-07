@@ -52,8 +52,8 @@ val exportGodotPack by tasks.registering(Exec::class) {
     val projectDir = rootProject.file("../godot")
     val pack = layout.buildDirectory.file("generated/godotAssets/cash_drive.pck")
     inputs.files(fileTree(projectDir) {
-        include("**/*.gd", "**/*.tscn", "project.godot", "export_presets.cfg")
-        exclude(".godot/**", "tests/**")
+        include("**/*.gd", "**/*.tscn", "**/*.glb", "**/*.import", "project.godot", "export_presets.cfg")
+        exclude(".godot/**", "tests/**", "tools/**")
     })
     outputs.file(pack)
     doFirst { pack.get().asFile.parentFile.mkdirs() }

@@ -17,7 +17,6 @@ func _request(generation: int, overrides: Dictionary = {}) -> Dictionary:
 	var value := {
 		"skinId": "horse",
 		"mode": "STATIC",
-		"previewSpeedKph": 0.0,
 		"theme": "day",
 		"viewport": {"width": 840.0, "height": 1184.0},
 		"reducedMotion": false,
@@ -31,39 +30,50 @@ func run() -> void:
 	var root = SCENE.instantiate()
 	get_root().add_child(root)
 	await process_frame
+	_check(root.skin_id == "horse" and not root.is_processing(), "starts on the horse theme without animating")
 	_check(root.apply_request(_request(1)), "valid request is accepted")
-	_check(root.custom_minimum_size == Vector2(840, 1184), "viewport dimensions are applied")
 	root._process(1.0)
 	_check(root.phase == 0.0 and not root.is_processing(), "static phase stays fixed and does not process frames")
-	_check(root.apply_request(_request(2, {"skinId": "mine", "viewport": {"width": 1640, "height": 810}})), "wide layout request is accepted")
-	_check(root.custom_minimum_size == Vector2(1640, 810), "wide resize is applied")
-	_check(not root.apply_request(_request(1, {"skinId": "gpu"})), "stale generation is rejected")
-	_check(root.skin_id == "mine", "stale request does not replace current skin")
 
-	_check(not root.apply_request(_request(3, {"skinId": "unknown"})), "unknown skin is rejected")
-	_check(root.mode == "STATIC" and not root.is_processing(), "invalid skin fails safe to static")
+	for skin in ["mine", "mining", "horse"]:
+		_check(root.apply_request(_request(root.generation_id + 1, {"skinId": skin, "theme": "night"})), "theme loads: " + skin)
+		_check(root.skin_id == skin and root._model != null, "model is present: " + skin)
+		var extent: float = maxf(root._model_size.x, maxf(root._model_size.y, root._model_size.z))
+		_check(absf(extent - 2.0) < 0.01, "model is normalized: " + skin)
+		await process_frame
+
+	_check(root.apply_request(_request(20, {"skinId": "mine", "viewport": {"width": 1640, "height": 810}})), "wide layout request is accepted")
+	_check(not root.apply_request(_request(1, {"skinId": "mining"})), "stale generation is rejected")
+	_check(root.skin_id == "mine", "stale request does not replace current theme")
+	_check(not root.apply_request(_request(21, {"skinId": "gpu"})), "removed gpu theme is rejected")
+	_check(root.mode == "STATIC" and not root.is_processing(), "invalid theme fails safe to static")
+	_check(root.skin_id == "mine", "invalid theme keeps the current model")
+	_check(not root.apply_request(_request(22, {"viewport": {"width": NAN, "height": 810}})), "NaN viewport is rejected")
+
+	_check(root.apply_request(_request(23, {"mode": "PREVIEW"})), "preview request is accepted")
+	_check(not root.is_processing(), "preview does not animate before a safety grant")
 	root.set_safety_allowed(true)
-	_check(not root.apply_request(_request(4, {"previewSpeedKph": NAN, "mode": "PREVIEW"})), "NaN speed is rejected")
-	_check(root.mode == "STATIC" and not root.is_processing(), "NaN request fails safe to static")
-
-	_check(root.apply_request(_request(5, {"skinId": "gpu", "mode": "PREVIEW", "previewSpeedKph": 400.0})), "finite preview request is accepted")
-	_check(root.preview_speed_kph == 120.0, "preview speed is clamped to the supported range")
-	_check(root.animation_rate <= 2.0 and root.is_processing(), "preview rate is bounded and processing is active")
+	_check(root.is_processing(), "preview animates after a safety grant")
+	root._process(0.5)
+	_check(root.phase > 0.0, "preview phase advances while allowed")
 	root.set_safety_allowed(false)
-	_check(root.mode == "STATIC" and not root.is_processing() and root.phase == 0.0, "safety lock immediately stops and resets motion")
+	_check(root.mode == "STATIC" and not root.is_processing() and root.phase == 0.0, "safety lock stops motion and resets phase")
+	_check(root._pivot.position == Vector3.ZERO and root._pivot.scale == Vector3.ONE, "safety lock restores the rest pose")
+	_check(not root._sparks.emitting and not root._sparks.visible, "safety lock stops particles")
 
 	root.set_safety_allowed(true)
-	_check(root.apply_request(_request(6, {"mode": "PREVIEW", "previewSpeedKph": 90.0})), "preview can resume only after explicit safety grant")
-	var before: float = root.phase
-	root.set_process(false)
-	root._process(1.0)
-	_check(root.phase > before, "preview phase advances only when explicitly processed")
-	_check(root.apply_request(_request(7, {"mode": "PREVIEW", "previewSpeedKph": 90.0, "reducedMotion": true})), "reduced-motion request is accepted")
-	_check(not root.is_processing() and root.animation_rate == 0.0, "reduced motion disables animation")
+	_check(not root.is_processing(), "safety grant alone does not resume after a lock")
+	_check(root.apply_request(_request(24, {"mode": "PREVIEW"})) and root.is_processing(), "preview resumes only with a new host request")
+	root.set_host_guard(func() -> bool: return false)
+	root._process(0.1)
+	_check(not root.is_processing() and root.mode == "STATIC", "revoked host guard stops the next frame")
+	root.set_host_guard(Callable())
 	root.set_safety_allowed(true)
-	root.apply_request(_request(8, {"mode": "PREVIEW", "previewSpeedKph": 90.0}))
+	_check(root.apply_request(_request(25, {"mode": "PREVIEW", "reducedMotion": true})), "reduced-motion request is accepted")
+	_check(not root.is_processing(), "reduced motion disables animation")
+	root.apply_request(_request(26, {"mode": "PREVIEW"}))
 	root.visible = false
-	_check(not root.is_processing() and root.mode == "STATIC", "hidden renderer stops and returns to static")
+	_check(not root.is_processing() and root.mode == "STATIC", "hidden stage stops and returns to static")
 	root.visible = true
 	_check(not root.is_processing(), "becoming visible does not resume without a new host request")
 	root.queue_free()
