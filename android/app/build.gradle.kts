@@ -14,15 +14,23 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Current project targets: arm64 vehicle and x86_64/arm64 emulators.
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     flavorDimensions += "signal"
     productFlavors {
-        create("demo") { dimension = "signal"; applicationIdSuffix = ".demo"; buildConfigField("boolean", "DEMO_SIGNALS", "true") }
-        create("emu") { dimension = "signal"; applicationIdSuffix = ".emu"; buildConfigField("boolean", "DEMO_SIGNALS", "false") }
-        create("vehicle") { dimension = "signal"; buildConfigField("boolean", "DEMO_SIGNALS", "false") }
+        create("demo") {
+            dimension = "signal"; applicationIdSuffix = ".demo"; buildConfigField("boolean", "DEMO_SIGNALS", "true")
+            // The portable presentation build supports both current 64-bit targets.
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+        create("emu") {
+            dimension = "signal"; applicationIdSuffix = ".emu"; buildConfigField("boolean", "DEMO_SIGNALS", "false")
+            ndk { abiFilters += "x86_64" }
+        }
+        create("vehicle") {
+            dimension = "signal"; buildConfigField("boolean", "DEMO_SIGNALS", "false")
+            ndk { abiFilters += "arm64-v8a" }
+        }
     }
 
     buildFeatures { buildConfig = true }
@@ -43,6 +51,7 @@ androidComponents {
 
 dependencies {
     implementation(project(":core"))
+    // Maven's published AAR is templateRelease; debugImplementation limits app packaging scope.
     debugImplementation("org.godotengine:godot:4.7.2.stable")
     debugImplementation("androidx.fragment:fragment:1.8.6")
     androidTestImplementation("androidx.test:runner:1.6.2")
