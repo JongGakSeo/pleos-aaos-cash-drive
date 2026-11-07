@@ -49,7 +49,7 @@ class RendererActivity : FragmentActivity(), GodotHost {
         if (Application.getProcessName() != "$packageName:renderer" || engineClaimed.get()) {
             finish(); return
         }
-        skin = intent.getStringExtra("skin").takeIf { it in setOf("horse", "mine", "gpu") } ?: "horse"
+        skin = intent.getStringExtra("skin").takeIf { it in setOf("horse", "mine", "mining") } ?: "horse"
         night = intent.getBooleanExtra("night", false)
         reduced = !android.animation.ValueAnimator.areAnimatorsEnabled()
         val root = LinearLayout(this).apply {
@@ -61,7 +61,7 @@ class RendererActivity : FragmentActivity(), GodotHost {
         root.addView(status)
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            listOf("horse" to "말", "mine" to "광산", "gpu" to "GPU").forEach { (id, label) ->
+            listOf("horse" to "말", "mine" to "광산", "mining" to "채굴").forEach { (id, label) ->
                 addControl(this, label) { skin = id; session.stop(); update() }
             }
         })
@@ -142,7 +142,7 @@ class RendererActivity : FragmentActivity(), GodotHost {
         if (!visible) surface.visibility = View.INVISIBLE
         fallback.visibility = if (visible) View.GONE else View.VISIBLE
         val json = JSONObject().put("skinId", skin).put("theme", if (night) "night" else "day")
-            .put("mode", if (state.playing) "PREVIEW" else "STATIC").put("previewSpeedKph", speed)
+            .put("mode", if (state.playing) "PREVIEW" else "STATIC").put("speedKph", speed)
             .put("reducedMotion", reduced).put("generationId", state.generation)
             .put("viewport", JSONObject().put("width", maxOf(1, surface.width)).put("height", maxOf(1, surface.height)))
             .toString()
