@@ -5,6 +5,7 @@ config_version=5
 config/name="Cash Drive Renderer"
 run/main_scene="res://main.tscn"
 run/max_fps=30
+run/low_processor_mode=true
 
 [display]
 window/size/viewport_width=840
