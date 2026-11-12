@@ -1,0 +1,6 @@
+<!-- The launcher icon of the home builds (debug and showcase manifests): the amber horse head on the meter's
+     dark face. The launcher masks it; the head stays inside the 66dp safe zone of the 108dp layers. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

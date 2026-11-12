@@ -1,0 +1,8 @@
+<!-- Payment card on the 24dp grid: a 19x13 card with 2.5dp corners, the magnetic stripe across its upper
+     third and a short number line bottom-left. The credits page's "인카 페이먼트 자동 적립" card carries it
+     (a generic card, no brand). Drawn plain white; code tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineJoin="round" android:fillColor="#00000000" android:pathData="M5,5.5 L19,5.5 A2.5,2.5 0 0 1 21.5,8 L21.5,16 A2.5,2.5 0 0 1 19,18.5 L5,18.5 A2.5,2.5 0 0 1 2.5,16 L2.5,8 A2.5,2.5 0 0 1 5,5.5 Z"/>
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:fillColor="#00000000" android:pathData="M2.5,10 L21.5,10"/>
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M6.5,14.5 L10.5,14.5"/>
+</vector>

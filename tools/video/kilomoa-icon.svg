@@ -1,0 +1,10 @@
+<!-- The launcher icon (android/app/src/home/res/drawable/ic_launcher_{background,foreground}.xml) as one SVG for
+     the video's title and end cards: the #131417 tile with the amber horse head, the group transform copied
+     (scale 0.86 about 54,54, then 1.2 right). Rendered to kilomoa-icon.png with headless Chrome. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
+  <rect width="108" height="108" rx="24" fill="#131417"/>
+  <g transform="translate(1.2 0) translate(54 54) scale(0.86) translate(-54 -54)">
+    <path fill="#E0A93C" fill-rule="evenodd" d="M23,57 C24,52 26,49 28,47 C33,41 39,36 45,31 C45,27 46,24 47,22 C49,24 51,26 52,28 C53,26 55,24 57,22 C59,24 60,27 60,29 C67,31 74,37 77,46 C79,55 79,66 76.6,76.6 A32,32 0 0 1 48.4,85.5 C47,80 47,73 49,68 C44,71 38,72 33,71 C29,70.5 24,68 23,63 C22.5,61 22.6,59 23,57 Z M49,38.5 m-3.4,0 a3.4,3.4 0 1 0 6.8,0 a3.4,3.4 0 1 0 -6.8,0 Z M50.2,37.3 m-1.1,0 a1.1,1.1 0 1 0 2.2,0 a1.1,1.1 0 1 0 -2.2,0 Z M27.5,56 m-1.7,0 a1.7,1.7 0 1 0 3.4,0 a1.7,1.7 0 1 0 -3.4,0 Z"/>
+    <path fill="#B9842A" d="M60,29 C63.2,32.42 68.09,40.98 68.77,44.62 C70.63,41.61 71.23,39.93 71.4,38.83 C72.37,42.05 72.17,49.67 71.08,53.12 C73.98,50.93 75.24,49.57 75.9,48.68 C75.4,52.15 73.14,60.27 71.35,63.7 C74.57,62 76.05,60.83 76.85,60.08 C75.77,63.4 72.26,71.11 69.96,74.19 C70.76,76.39 71.23,78.84 71.43,80.84 A32,32 0 0 0 76.6,76.6 C79,66 79,55 77,46 C74,37 67,31 60,29 Z"/>
+  </g>
+</svg>

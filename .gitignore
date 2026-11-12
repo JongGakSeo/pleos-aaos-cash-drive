@@ -1,0 +1,28 @@
+.env
+.env.*
+!.env.example
+.tools
+.workspace.local.json
+**/local.properties
+**/.gradle/
+**/.kotlin/
+**/.godot/
+**/build/
+**/__pycache__/
+*.sqlite3*
+*.keystore
+*.jks
+*.log
+.DS_Store
+
+# Ignored local links into the master checkout
+/docs
+/.agents
+# Local outputs (demo takes, emulator evidence); the records live in the working repository
+planning/
+# Third-party PSA clip: copied in from the working repository only for a PSA build
+android/app/src/psa/
+
+# Regenerated from the .glb files by the Godot import
+godot/assets/varco/**/*.png
+godot/assets/varco/**/*.import

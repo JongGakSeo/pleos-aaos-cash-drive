@@ -1,0 +1,7 @@
+<!-- Speedometer on the 24dp grid: a three-quarter dial, the needle and its hub. The permission gate's note
+     ("주행 거리는 차량 속도 신호로 계산해요") carries it. Drawn plain white; code tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M5.64,19.36 A9,9 0 1 1 18.36,19.36"/>
+  <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M12,13 L15.9,9.1"/>
+  <path android:fillColor="#FFFFFFFF" android:pathData="M12,13 m-2,0 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z"/>
+</vector>

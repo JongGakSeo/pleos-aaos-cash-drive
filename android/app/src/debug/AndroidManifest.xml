@@ -1,0 +1,34 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Debug only: the loopback sandbox server (server/) behind the development screen. Release has no network use. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The home builds carry the adaptive horse icon (src/home/res); the main manifest keeps the original icon. -->
+    <application android:networkSecurityConfig="@xml/debug_network_security_config"
+        android:icon="@mipmap/ic_launcher" tools:replace="android:icon">
+        <!-- Debug launcher for the previous development screen; the demo home below is the product UI. -->
+        <activity android:name=".MainActivity" android:label="킬로모아 개발" />
+        <!-- Launcher entry: shows the speed permission dialog in a task of its own, so the Pleos launcher never
+             records the dialog as the home task's top activity (planning/evidence/2026-11-08-launcher-gate). -->
+        <activity android:name=".home.PermissionGateActivity" android:exported="true" android:label="킬로모아"
+            android:process=":home" android:launchMode="singleTask" android:taskAffinity="${applicationId}.gate"
+            android:excludeFromRecents="true" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".home.HomeActivity" android:exported="true" android:label="킬로모아"
+            android:process=":home" android:launchMode="singleTask" android:resizeableActivity="true"
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+        <activity android:name=".RendererActivity" android:exported="false"
+            android:process=":renderer" android:launchMode="singleTask" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+    </application>
+</manifest>

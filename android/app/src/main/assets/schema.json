@@ -1,0 +1,34 @@
+{
+  "packageName": "ai.kilomoa.app",
+  "appDescription": "KiloMoa turns everyday driving into rewards: briefing tickets accumulate per kilometre while driving, and short public-interest briefings play only while the vehicle is parked to earn credits.",
+  "invokeWord": "킬로모아",
+  "version": "0.1.0",
+  "actionCalls": [
+    {
+      "type": "function",
+      "function": {
+        "name": "CHECK_REWARD_BALANCE",
+        "description": "Report the distance driven today, the number of briefing tickets available, and the current credit balance.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "component": "service"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "OPEN_KILOMOA",
+        "description": "Bring the KiloMoa home screen to the foreground.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "component": "service"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Debuggable showcase for emulator runs. The debug build type's manifest outranks the flavor manifest, so its
+         development extras (loopback INTERNET, cleartext config, development screen, renderer lab) are removed here
+         to keep this manifest identical to the showcase release apart from android:debuggable. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <application tools:remove="android:networkSecurityConfig">
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <activity android:name=".RendererActivity" tools:node="remove" />
+    </application>
+</manifest>

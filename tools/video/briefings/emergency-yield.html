@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>브리핑 영상: 사이렌이 들리면</title>
+<!--
+  Scene source of creatives/brief-emergency-yield.mp4 (BriefingCatalog id emergency-yield). 1080x1080,
+  15 s, four scenes on the caption cues 0 / 4 / 8 / 12 s with 0.4 s crossfades centred on the cues. No
+  sentence is drawn here: the app draws the caption pill over the bottom of the picture, so the bottom
+  fifth stays road and grass. The emergency vehicle is a generic white van with an orange side stripe and a
+  red and blue light bar (alternating at 1.25 Hz): no emblem, no lettering, no number. window.renderAt(seconds)
+  draws one exact frame; opened in a browser the page previews itself in real time (append ?t=5.5 to hold
+  one moment).
+  Render: node tools/video/render_briefing.mjs emergency-yield android/app/src/main/assets/creatives/brief-emergency-yield.mp4
+-->
+<style>
+  html, body { margin: 0; background: #0E0F11; }
+  body { width: 1080px; height: 1080px; overflow: hidden; }
+  svg { display: block; }
+  text { font-family: "Apple SD Gothic Neo", sans-serif; }
+</style>
+</head>
+<body>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2"/></filter>
+    <filter id="blur4" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="blur8" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+    <radialGradient id="glowRed"><stop offset="0" stop-color="#FF6B5E" stop-opacity=".95"/><stop offset=".45" stop-color="#FF6B5E" stop-opacity=".35"/><stop offset="1" stop-color="#FF6B5E" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glowAmber"><stop offset="0" stop-color="#FFC24A" stop-opacity=".95"/><stop offset=".45" stop-color="#FFB02E" stop-opacity=".35"/><stop offset="1" stop-color="#FFB02E" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glowGreen"><stop offset="0" stop-color="#5FD69E" stop-opacity=".9"/><stop offset=".45" stop-color="#5FD69E" stop-opacity=".3"/><stop offset="1" stop-color="#5FD69E" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glowBlue"><stop offset="0" stop-color="#6F98FF" stop-opacity=".95"/><stop offset=".45" stop-color="#6F98FF" stop-opacity=".35"/><stop offset="1" stop-color="#6F98FF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="endSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BFD8EE"/><stop offset=".55" stop-color="#EAF1F6"/></linearGradient>
+    <radialGradient id="vignette" cx=".5" cy=".46" r=".74"><stop offset=".7" stop-color="#0E0F11" stop-opacity="0"/><stop offset="1" stop-color="#0E0F11" stop-opacity=".08"/></radialGradient>
+    <linearGradient id="calmFade" x1="0" y1="0" x2="0" y2="1"><stop offset=".72" stop-color="#FFFFFF"/><stop offset=".9" stop-color="#2A2A2A"/></linearGradient>
+    <mask id="calmBottom" maskUnits="userSpaceOnUse" x="0" y="0" width="1080" height="1080"><rect width="1080" height="1080" fill="url(#calmFade)"/></mask>
+  </defs>
+</svg>
+<script>
+'use strict';
+/* ===== Series kit: keep this block identical in right-turn.html, school-zone.html and emergency-yield.html ===== */
+const W = 1080, H = 1080, DURATION = 15, FADE = 0.4;
+const NS = 'http://www.w3.org/2000/svg';
+const SVG = document.getElementById('stage');
+/** Day palette of the home diorama (godot/ThemeBackdrop.gd) and the top-down companions in its family. */
+const PAL = {
+  sky1: '#BFD8EE', sky2: '#EAF1F6', disc: '#FFE9B8', halo: '#FFF4DA', cloud: '#FFFFFF', farthest: '#DCE5EB',
+  far: '#C9D6DC', near: '#A9BCC6', trees: '#7F9AA6', grass: '#A9C29A', blade: '#A9BCC6', road: '#4A4D55',
+  curb: '#D9D4C6', lane: '#3C3F46', dash: '#E6E6E6', post: '#8C929B', amber: '#E0A93C',
+  walk: '#DDD8CC', walkEdge: '#C9C3B4', lawn: '#A9C29A', lawnDeep: '#97B489', crown: '#82A193', crownLit: '#9BB8A6', crownDeep: '#728F83',
+  paint: '#EDECE7', centre: '#E5C565', shadow: '#1E2731', housing: '#3B3F47', lampOff: '#5A5F69',
+  red: '#E9655A', yellow: '#F2C14E', green: '#4CC48C',
+};
+
+function el(tag, attrs, parent) {
+  const node = document.createElementNS(NS, tag);
+  if (attrs) for (const key in attrs) node.setAttribute(key, attrs[key]);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+function set(node, attrs) { for (const key in attrs) node.setAttribute(key, attrs[key]); }
+const n2 = (v) => Math.round(v * 100) / 100;
+const n3 = (v) => Math.round(v * 1000) / 1000;
+const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+/** Progress of t through [a, b], 0 before and 1 after. */
+const span = (t, a, b) => clamp((t - a) / (b - a));
+const smooth = (p) => p * p * (3 - 2 * p);
+const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const backOut = (p) => 1 + 2.4 * Math.pow(p - 1, 3) + 1.4 * Math.pow(p - 1, 2);
+/** 0 -> 1 -> 0 over [a, b]. */
+const bump = (t, a, b) => Math.sin(Math.PI * span(t, a, b));
+/** A soft on/off wave at hz. Every light that blinks in this series stays at or under 2 Hz. */
+const blink = (t, hz, phase = 0) => smooth(clamp(0.5 + Math.sin(2 * Math.PI * (hz * t + phase)) / 0.6));
+const rad = (d) => (d * Math.PI) / 180;
+
+/**
+ * Position on a track of keys [t, value, velocity]: cubic Hermite between keys (velocity 0 at a key
+ * is a smooth stop or start), straight extrapolation past either end. Vehicles, people and cameras
+ * all move on tracks, so a frame depends on t alone.
+ */
+function track(t, keys) {
+  const first = keys[0], last = keys[keys.length - 1];
+  if (t <= first[0]) return first[1] + first[2] * (t - first[0]);
+  if (t >= last[0]) return last[1] + last[2] * (t - last[0]);
+  let i = 1;
+  while (keys[i][0] < t) i++;
+  const [t0, s0, v0] = keys[i - 1], [t1, s1, v1] = keys[i];
+  const d = t1 - t0, p = (t - t0) / d, p2 = p * p, p3 = p2 * p;
+  return (2 * p3 - 3 * p2 + 1) * s0 + (p3 - 2 * p2 + p) * d * v0 + (-2 * p3 + 3 * p2) * s1 + (p3 - p2) * d * v1;
+}
+/** Speed on a track at t (units per second). */
+const speedOn = (t, keys) => (track(t + 0.01, keys) - track(t - 0.01, keys)) / 0.02;
+
+/**
+ * A drive route from (x, y) at heading degrees (0 up, 90 right): parts are {line: length} and
+ * {turn: +-degrees, radius} (positive turns right). poseAt(route, s) is the pose s units along it.
+ */
+function route(x, y, heading, parts) {
+  const segs = [];
+  let length = 0;
+  for (const part of parts) {
+    if (part.line !== undefined) {
+      segs.push({ line: true, x, y, h: heading, from: length, len: part.line });
+      x += part.line * Math.sin(rad(heading));
+      y -= part.line * Math.cos(rad(heading));
+      length += part.line;
+    } else {
+      const dir = Math.sign(part.turn), R = part.radius;
+      const cx = x + dir * R * Math.cos(rad(heading)), cy = y + dir * R * Math.sin(rad(heading));
+      const len = R * rad(Math.abs(part.turn));
+      segs.push({ line: false, cx, cy, R, dir, h: heading, from: length, len });
+      heading += part.turn;
+      x = cx - dir * R * Math.cos(rad(heading));
+      y = cy - dir * R * Math.sin(rad(heading));
+      length += len;
+    }
+  }
+  segs.push({ line: true, x, y, h: heading, from: length, len: Infinity });
+  return { segs, length };
+}
+function poseAt(rt, s) {
+  const seg = s < 0 ? rt.segs[0] : rt.segs.find((g) => s <= g.from + g.len);
+  const d = s - seg.from;
+  if (seg.line) return { x: seg.x + d * Math.sin(rad(seg.h)), y: seg.y - d * Math.cos(rad(seg.h)), h: seg.h };
+  const h = seg.h + seg.dir * (d / seg.R) * (180 / Math.PI);
+  return { x: seg.cx - seg.dir * seg.R * Math.cos(rad(h)), y: seg.cy - seg.dir * seg.R * Math.sin(rad(h)), h };
+}
+/** SVG path data of a route from s0 to s1 (sampled every 6 units). */
+function routePath(rt, s0, s1) {
+  const pts = [];
+  for (let s = s0; s < s1; s += 6) pts.push(poseAt(rt, s));
+  pts.push(poseAt(rt, s1));
+  return pts.map((p, i) => `${i ? 'L' : 'M'}${n2(p.x)} ${n2(p.y)}`).join('');
+}
+
+/** Frames a group: the world point (cx, cy) at the centre of the picture, zoomed. */
+function aim(group, cx, cy, zoom) {
+  set(group, { transform: `translate(${W / 2} ${H / 2}) scale(${n3(zoom)}) translate(${n2(-cx)} ${n2(-cy)})` });
+}
+
+/* ---- Vehicles: top-down, nose up at heading 0, rounded and outline-free ---- */
+const CAR_LOOKS = {
+  hero: { body: '#E0A93C', roof: '#EDC266', edge: '#C48D2E', glass: '#D5E3EC', sheen: '#FFF1CF' },
+  white: { body: '#F2F1EC', roof: '#FBFBF8', edge: '#D2D0C8', glass: '#C3D3DF', sheen: '#FFFFFF' },
+  silver: { body: '#BEC4CC', roof: '#CED3DA', edge: '#A3AAB4', glass: '#D2DEE7', sheen: '#F4F6F8' },
+  slate: { body: '#8FA4B7', roof: '#A3B6C7', edge: '#7A8FA3', glass: '#D5E1EA', sheen: '#E8EEF4' },
+};
+function car(parent, lookName) {
+  const L = CAR_LOOKS[lookName];
+  const g = el('g', {}, parent);
+  const shadow = el('g', {}, g);
+  const shadowBody = el('rect', { x: -46, y: -80, width: 92, height: 164, rx: 34, fill: PAL.shadow, opacity: 0.26, filter: 'url(#blur4)' }, shadow);
+  const glowBack = el('g', {}, g);
+  const brakeGlow = [-30, 30].map((x) => el('ellipse', { cx: x, cy: 88, rx: 26, ry: 18, fill: 'url(#glowRed)', opacity: 0 }, glowBack));
+  const blinkGlow = {};
+  for (const side of ['L', 'R']) {
+    const sx = side === 'R' ? 40 : -40;
+    blinkGlow[side] = [el('circle', { cx: sx, cy: -74, r: 22, fill: 'url(#glowAmber)', opacity: 0 }, glowBack),
+      el('circle', { cx: sx, cy: 76, r: 22, fill: 'url(#glowAmber)', opacity: 0 }, glowBack)];
+  }
+  const body = el('g', {}, g);
+  for (const [x, y] of [[-49, -56], [41, -56], [-49, 34], [41, 34]]) el('rect', { x, y, width: 8, height: 24, rx: 3, fill: '#2F333A' }, body);
+  el('rect', { x: -46, y: -84, width: 92, height: 168, rx: 34, fill: L.body, stroke: L.edge, 'stroke-width': 1.5 }, body);
+  el('ellipse', { cx: 0, cy: -62, rx: 30, ry: 11, fill: L.sheen, opacity: 0.28 }, body);
+  el('path', { d: 'M-35 -36 Q0 -48 35 -36 L31 -14 Q0 -20 -31 -14 Z', fill: L.glass }, body);
+  el('rect', { x: -32, y: -14, width: 64, height: 54, rx: 15, fill: L.roof }, body);
+  el('path', { d: 'M-31 42 Q0 48 31 42 L33 56 Q0 63 -33 56 Z', fill: L.glass, opacity: 0.9 }, body);
+  for (const x of [-1, 1]) el('ellipse', { cx: x * 50, cy: -26, rx: 8, ry: 5, fill: L.body, stroke: L.edge, 'stroke-width': 1.2 }, body);
+  for (const x of [-37, 19]) el('rect', { x, y: -83, width: 18, height: 7, rx: 3.5, fill: '#FFF6DE' }, body);
+  const tails = [-38, 20].map((x) => el('rect', { x, y: 76, width: 18, height: 7, rx: 3.5, fill: '#B9554D' }, body));
+  const lamps = {};
+  for (const side of ['L', 'R']) {
+    const sx = side === 'R' ? 37 : -37;
+    lamps[side] = [el('circle', { cx: sx, cy: -73, r: 4.5, fill: '#F6C25A', opacity: 0 }, body), el('circle', { cx: sx, cy: 75, r: 4.5, fill: '#F6C25A', opacity: 0 }, body)];
+  }
+  return {
+    g,
+    /** pose {x, y, h}; brake 0..1; blinker 0..1 for side 'L' or 'R'; alpha for ghosts. */
+    set(pose, o = {}) {
+      set(g, { transform: `translate(${n2(pose.x)} ${n2(pose.y)})`, opacity: n3(o.alpha ?? 1) });
+      set(shadow, { transform: `translate(6 9) rotate(${n2(pose.h)})` });
+      set(glowBack, { transform: `rotate(${n2(pose.h)})` });
+      set(body, { transform: `rotate(${n2(pose.h)})` });
+      const brake = o.brake ?? 0;
+      brakeGlow.forEach((e) => set(e, { opacity: n3(brake * 0.85) }));
+      tails.forEach((e) => set(e, { fill: brake > 0.5 ? '#FF6155' : '#B9554D' }));
+      for (const side of ['L', 'R']) {
+        const on = o.side === side ? (o.blinker ?? 0) : 0;
+        blinkGlow[side].forEach((e) => set(e, { opacity: n3(on) }));
+        lamps[side].forEach((e) => set(e, { opacity: n3(on) }));
+      }
+    },
+  };
+}
+
+/* ---- People: upright chibi figures standing on the map, feet at the origin ---- */
+function person(parent, look) {
+  const k = look.child ? 0.8 : 1;
+  const g = el('g', {}, parent);
+  el('ellipse', { cx: 0, cy: 1, rx: 19 * k, ry: 6.5 * k, fill: PAL.shadow, opacity: 0.24, filter: 'url(#blur2)' }, g);
+  const fig = el('g', {}, g);
+  const hipY = -22 * k, shoulderY = -48 * k;
+  const legs = [-1, 1].map((sx) => {
+    const leg = el('g', {}, fig);
+    el('rect', { x: -5.5 * k, y: -2, width: 11 * k, height: 23 * k, rx: 5 * k, fill: look.pants }, leg);
+    el('ellipse', { cx: 0, cy: 21 * k, rx: 7 * k, ry: 4 * k, fill: '#3A3F48' }, leg);
+    return { leg, x: sx * 7.5 * k };
+  });
+  if (look.bag) el('rect', { x: -19 * k, y: -50 * k, width: 38 * k, height: 32 * k, rx: 10 * k, fill: look.bag }, fig);
+  el('rect', { x: -16 * k, y: -52 * k, width: 32 * k, height: 34 * k, rx: 13 * k, fill: look.shirt }, fig);
+  const arms = [-1, 1].map((sx) => {
+    const arm = el('g', {}, fig);
+    const sleeve = el('rect', { x: -4.5 * k, y: -2, width: 9 * k, height: 25 * k, rx: 4.5 * k, fill: look.shirt }, arm);
+    const hand = el('circle', { cx: 0, cy: 22 * k, r: 5 * k, fill: look.skin }, arm);
+    return { arm, sleeve, hand, x: sx * 17 * k };
+  });
+  const headY = -68 * k - (look.child ? 2 : 0);
+  const headR = look.child ? 18 : 19;
+  const head = el('g', { transform: `translate(0 ${headY})` }, fig);
+  el('circle', { cx: 0, cy: 0, r: headR, fill: look.skin }, head);
+  const face = el('g', {}, head);
+  for (const x of [-6.5, 6.5]) el('ellipse', { cx: x, cy: 2, rx: 2.4, ry: 2.8, fill: '#2C2320' }, face);
+  for (const x of [-11, 11]) el('ellipse', { cx: x, cy: 8, rx: 4, ry: 2.4, fill: '#EE9A86', opacity: 0.5 }, face);
+  if (look.cap) {
+    el('path', { d: `M${-headR - 1} -1 A${headR + 1} ${headR + 2} 0 0 1 ${headR + 1} -1 Z`, fill: look.cap }, head);
+    el('path', { d: `M${-headR - 2} -2 Q0 4 ${headR + 2} -2 L${headR + 2} 1 Q0 7 ${-headR - 2} 1 Z`, fill: '#D9A92C' }, head);
+  } else {
+    el('path', { d: `M${-headR} 1 C${-headR} -26 ${headR} -26 ${headR} 1 C${headR - 6} -8 ${-6} -12 ${-headR} 1 Z`, fill: look.hair }, head);
+  }
+  return {
+    g,
+    /** x, y feet; walked distance drives the stride; facing -1 left, 1 right, 0 front; raise lifts the right hand. */
+    set(o) {
+      const walking = o.walking ?? 0;
+      const phase = (o.walked ?? 0) / (34 * k);
+      const swing = Math.sin(2 * Math.PI * phase) * 24 * walking;
+      const bob = -Math.abs(Math.cos(2 * Math.PI * phase)) * 2.4 * walking;
+      set(g, { transform: `translate(${n2(o.x)} ${n2(o.y)})`, opacity: n3(o.alpha ?? 1) });
+      set(fig, { transform: `translate(0 ${n2(bob)}) rotate(${n2((o.facing ?? 0) * 3 * walking)})` });
+      legs.forEach((l, i) => set(l.leg, { transform: `translate(${l.x} ${hipY}) rotate(${n2(i ? swing : -swing)})` }));
+      arms.forEach((a, i) => {
+        const raised = i === 1 ? (o.raise ?? 0) : 0;
+        const angle = lerp(i ? -swing * 0.8 : swing * 0.8, -158, raised);
+        const len = 25 * k * (1 + 0.62 * raised);
+        set(a.arm, { transform: `translate(${a.x} ${shoulderY}) rotate(${n2(angle)})` });
+        set(a.sleeve, { height: n2(len) });
+        set(a.hand, { cy: n2(len - 3 * k) });
+      });
+      set(face, { transform: `translate(${n2((o.facing ?? 0) * 4.5)} 0)` });
+    },
+  };
+}
+
+/* ---- Signals, seen from the front as on a road map ---- */
+/** A three-lamp vehicle signal hanging from an arm; set({red, yellow, green}) takes 0..1 each. */
+function signalHead(parent, x, y, poleX, poleBaseY, k = 1.2) {
+  const g = el('g', {}, parent);
+  el('ellipse', { cx: poleX, cy: poleBaseY + 2, rx: 12, ry: 5, fill: PAL.shadow, opacity: 0.25, filter: 'url(#blur2)' }, g);
+  const armY = y - 30 * k - 8;
+  el('rect', { x: poleX - 4.5, y: armY, width: 9, height: poleBaseY - armY, rx: 4.5, fill: PAL.post }, g);
+  el('rect', { x: Math.min(x, poleX), y: armY - 2, width: Math.abs(poleX - x) + 4, height: 8, rx: 4, fill: PAL.post }, g);
+  el('rect', { x: x - 2.5, y: armY + 4, width: 5, height: y - 24 * k - armY - 4, fill: PAL.post }, g);
+  const head = el('g', { transform: `translate(${x} ${y}) scale(${k}) translate(${-x} ${-y})` }, g);
+  el('rect', { x: x - 76, y: y + 6, width: 152, height: 26, rx: 13, fill: PAL.shadow, opacity: 0.22, filter: 'url(#blur4)' }, head);
+  el('rect', { x: x - 78, y: y - 24, width: 156, height: 50, rx: 15, fill: PAL.housing }, head);
+  el('rect', { x: x - 74, y: y - 21, width: 148, height: 6, rx: 3, fill: '#FFFFFF', opacity: 0.07 }, head);
+  const colors = [PAL.red, PAL.yellow, PAL.green];
+  const glows = ['url(#glowRed)', 'url(#glowAmber)', 'url(#glowGreen)'];
+  const lamps = [-49, 0, 49].map((dx, i) => ({
+    glow: el('circle', { cx: x + dx, cy: y + 1, r: 40, fill: glows[i], opacity: 0 }, head),
+    off: el('circle', { cx: x + dx, cy: y + 1, r: 16, fill: PAL.lampOff }, head),
+    on: el('circle', { cx: x + dx, cy: y + 1, r: 16, fill: colors[i], opacity: 0 }, head),
+  }));
+  return {
+    g,
+    set(o) {
+      ['red', 'yellow', 'green'].forEach((key, i) => {
+        const v = o[key] ?? 0;
+        set(lamps[i].on, { opacity: n3(v) });
+        set(lamps[i].glow, { opacity: n3(v * 0.7) });
+      });
+    },
+  };
+}
+/** The three-colour right-turn arrow signal: a vertical head of red, yellow and green right arrows. */
+function arrowSignal(parent, x, y, baseY, k = 1.1) {
+  const root = el('g', {}, parent);
+  el('ellipse', { cx: x, cy: baseY + 2, rx: 12, ry: 5, fill: PAL.shadow, opacity: 0.25, filter: 'url(#blur2)' }, root);
+  el('rect', { x: x - 4.5, y: y + 60, width: 9, height: baseY - y - 60, rx: 4.5, fill: PAL.post }, root);
+  const g = el('g', { transform: `translate(${x} ${y}) scale(${k}) translate(${-x} ${-y})` }, root);
+  el('rect', { x: x - 20, y: y - 64, width: 54, height: 160, rx: 15, fill: PAL.shadow, opacity: 0.22, filter: 'url(#blur4)' }, g);
+  el('rect', { x: x - 27, y: y - 80, width: 54, height: 160, rx: 15, fill: PAL.housing }, g);
+  const colors = [PAL.red, PAL.yellow, PAL.green];
+  const glows = ['url(#glowRed)', 'url(#glowAmber)', 'url(#glowGreen)'];
+  const arrow = 'M-11 -3.5 H2 V-10 L12 0 L2 10 V3.5 H-11 Z';
+  const lamps = [-50, 0, 50].map((dy, i) => {
+    el('circle', { cx: x, cy: y + dy, r: 19, fill: '#2C2F35' }, g);
+    const glow = el('circle', { cx: x, cy: y + dy, r: 42, fill: glows[i], opacity: 0 }, g);
+    el('path', { d: arrow, transform: `translate(${x} ${y + dy}) scale(1.15)`, fill: PAL.lampOff }, g);
+    const on = el('path', { d: arrow, transform: `translate(${x} ${y + dy}) scale(1.15)`, fill: colors[i], opacity: 0 }, g);
+    return { glow, on };
+  });
+  return {
+    g,
+    set(o) {
+      ['red', 'yellow', 'green'].forEach((key, i) => {
+        const v = o[key] ?? 0;
+        set(lamps[i].on, { opacity: n3(v) });
+        set(lamps[i].glow, { opacity: n3(v * 0.75) });
+      });
+    },
+  };
+}
+
+/* ---- Ground: crossing roads with rounded city blocks, sidewalks and lawns ---- */
+/**
+ * Two roads crossing at the origin, each 2 * half wide; the four blocks are rounded rectangles of
+ * sidewalk with a lawn inside. Returns layers to draw on, back to front.
+ */
+function crossroads(parent, o) {
+  const { half, corner, walk } = o;
+  const E = 2400;
+  const g = el('g', {}, parent);
+  const ground = el('g', {}, g);
+  el('rect', { x: -E, y: -E, width: 2 * E, height: 2 * E, fill: PAL.road }, ground);
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const x0 = sx > 0 ? half : -E, y0 = sy > 0 ? half : -E, size = E - half;
+    el('rect', { x: x0, y: y0, width: size, height: size, rx: corner, fill: PAL.walk }, ground);
+    el('rect', { x: x0 + 1.5, y: y0 + 1.5, width: size - 3, height: size - 3, rx: corner - 1.5, fill: 'none', stroke: PAL.walkEdge, 'stroke-width': 3 }, ground);
+    el('rect', { x: x0 + (sx > 0 ? walk : 0), y: y0 + (sy > 0 ? walk : 0), width: size - walk, height: size - walk, rx: Math.max(10, corner - walk), fill: PAL.lawn }, ground);
+  }
+  return { g, ground, marks: el('g', {}, g), decor: el('g', {}, g), traffic: el('g', {}, g), upright: el('g', {}, g), over: el('g', {}, g) };
+}
+/**
+ * Zebra bars. acrossVertical: the crosswalk crosses a road that runs up the picture, so its bars stand
+ * upright, each spanning [a, b] in y, spread over [c0, c1] in x; otherwise the bars lie flat, each
+ * spanning [a, b] in x, spread over [c0, c1] in y.
+ */
+function crosswalk(parent, acrossVertical, a, b, c0, c1, color = PAL.paint) {
+  const bar = 17, gap = 15;
+  const count = Math.floor((c1 - c0 + gap) / (bar + gap));
+  const start = (c0 + c1 - (count * bar + (count - 1) * gap)) / 2;
+  for (let i = 0; i < count; i++) {
+    const c = start + i * (bar + gap);
+    if (acrossVertical) el('rect', { x: c, y: a, width: bar, height: b - a, rx: 2, fill: color }, parent);
+    else el('rect', { x: a, y: c, width: b - a, height: bar, rx: 2, fill: color }, parent);
+  }
+}
+/** A yellow double centre line from (x0, y0) to (x1, y1), horizontal or vertical. */
+function centreLine(parent, x0, y0, x1, y1) {
+  const vertical = x0 === x1;
+  for (const off of [-5, 5]) {
+    if (vertical) el('rect', { x: x0 + off - 2.5, y: Math.min(y0, y1), width: 5, height: Math.abs(y1 - y0), fill: PAL.centre }, parent);
+    else el('rect', { x: Math.min(x0, x1), y: y0 + off - 2.5, width: Math.abs(x1 - x0), height: 5, fill: PAL.centre }, parent);
+  }
+}
+/** A flat rooftop seen from above with its soft shadow. */
+function roof(parent, x, y, w, h, color, inner) {
+  el('rect', { x: x + 10, y: y + 14, width: w, height: h, rx: 14, fill: PAL.shadow, opacity: 0.22, filter: 'url(#blur8)' }, parent);
+  el('rect', { x, y, width: w, height: h, rx: 14, fill: color }, parent);
+  el('rect', { x: x + 12, y: y + 12, width: w - 24, height: h - 24, rx: 8, fill: inner }, parent);
+  const ux = x + w * 0.6, uy = y + h * 0.2;
+  el('rect', { x: ux + 4, y: uy + 6, width: 58, height: 40, rx: 7, fill: PAL.shadow, opacity: 0.16, filter: 'url(#blur4)' }, parent);
+  el('rect', { x: ux, y: uy, width: 58, height: 40, rx: 7, fill: color }, parent);
+  el('circle', { cx: ux + 20, cy: uy + 20, r: 11, fill: inner }, parent);
+  el('circle', { cx: ux + 20, cy: uy + 20, r: 4, fill: color }, parent);
+  el('rect', { x: ux + 38, y: uy + 9, width: 12, height: 22, rx: 3, fill: inner }, parent);
+  const sx = x + w * 0.16, sy = y + h * 0.58;
+  el('rect', { x: sx + 5, y: sy + 7, width: 64, height: 50, rx: 8, fill: PAL.shadow, opacity: 0.16, filter: 'url(#blur4)' }, parent);
+  el('rect', { x: sx, y: sy, width: 64, height: 50, rx: 8, fill: color }, parent);
+  el('rect', { x: sx + 8, y: sy + 8, width: 48, height: 34, rx: 5, fill: inner, opacity: 0.6 }, parent);
+}
+/** A tree crown from above: soft shadow, crown, a lit cap. */
+const LOBES = [[0, 0, 0.78], [-0.5, 0.12, 0.52], [0.48, 0.18, 0.5], [0.08, -0.5, 0.5], [-0.3, -0.36, 0.44], [0.34, -0.3, 0.42], [-0.06, 0.5, 0.46]];
+function tree(parent, x, y, r) {
+  el('circle', { cx: x + 9, cy: y + 12, r: r * 1.05, fill: PAL.shadow, opacity: 0.24, filter: 'url(#blur4)' }, parent);
+  for (const [dx, dy, s] of LOBES) el('circle', { cx: x + dx * r, cy: y + dy * r, r: s * r, fill: PAL.crown }, parent);
+  el('circle', { cx: x + r * 0.22, cy: y + r * 0.3, r: r * 0.5, fill: PAL.crownDeep, opacity: 0.35 }, parent);
+  for (const [dx, dy, s] of [[-0.24, -0.28, 0.42], [0.12, -0.42, 0.26], [-0.46, -0.04, 0.24]]) {
+    el('circle', { cx: x + dx * r, cy: y + dy * r, r: s * r, fill: PAL.crownLit, opacity: 0.85 }, parent);
+  }
+}
+function streetTree(parent, x, y) {
+  el('rect', { x: x - 15, y: y - 15, width: 30, height: 30, rx: 4, fill: '#CBC4B4' }, parent);
+  tree(parent, x, y, 23);
+}
+function bush(parent, x, y, r) {
+  el('circle', { cx: x + 4, cy: y + 6, r: r * 1.1, fill: PAL.shadow, opacity: 0.18, filter: 'url(#blur4)' }, parent);
+  for (const [dx, dy, s] of [[0, 0, 0.8], [-0.55, 0.15, 0.55], [0.55, 0.12, 0.55]]) el('circle', { cx: x + dx * r, cy: y + dy * r, r: s * r, fill: PAL.lawnDeep }, parent);
+  el('circle', { cx: x - r * 0.2, cy: y - r * 0.25, r: r * 0.35, fill: '#B3CBA4', opacity: 0.8 }, parent);
+}
+
+/** A faint vignette over a road scene (screen space), so the picture sits in the dark theater. */
+function atmosphere(parent) {
+  el('rect', { width: W, height: H, fill: 'url(#vignette)' }, parent);
+}
+/** A ring that grows and fades once over [t0, t0 + life]. */
+function pulseRing(parent, color, width) {
+  const ring = el('circle', { r: 0, fill: 'none', stroke: color, 'stroke-width': width, opacity: 0 }, parent);
+  return (t, t0, life, x, y, r0, r1) => {
+    const p = span(t, t0, t0 + life);
+    const visible = t >= t0 && t <= t0 + life;
+    set(ring, { cx: n2(x), cy: n2(y), r: n2(lerp(r0, r1, easeOut(p))), opacity: visible ? n3((1 - p) * 0.8) : 0 });
+  };
+}
+
+/** The pause beat: a soft amber outline swells off a stopped car once over [t0, t0 + life]. */
+function carPulse(parent) {
+  const node = el('rect', { fill: 'none', stroke: PAL.amber, 'stroke-width': 9, opacity: 0 }, parent);
+  return (t, t0, life, pose) => {
+    const p = span(t, t0, t0 + life);
+    const grow = 4 + 30 * easeOut(p);
+    set(node, {
+      x: n2(-46 - grow), y: n2(-84 - grow), width: n2(92 + 2 * grow), height: n2(168 + 2 * grow), rx: n2(34 + grow),
+      opacity: t >= t0 && t <= t0 + life ? n3(0.75 * (1 - p) * smooth(span(t, t0, t0 + 0.12))) : 0,
+      transform: `translate(${n2(pose.x)} ${n2(pose.y)}) rotate(${n2(pose.h)})`,
+    });
+  };
+}
+
+/* ---- The closing beat (12-15 s), the same in every briefing of the series ---- */
+/* The pony of the closing beat: the app's 3D pony at its idle, 77 frames at 24 fps starting 0.2 s before the
+   cue (the crossfade's first half), rendered on a transparent ground by godot/tools/look.gd. One sheet of
+   11 columns of 448x504 cells; the hooves stand on row 497 and their middle is 55 px right of the cell's. */
+const PONY = { src: 'pony-idle.webp', cols: 11, w: 448, h: 504, frames: 77, fps: 24, lead: 0.2, feet: 497, stance: 55 };
+const PONY_SHEET = new Image();
+PONY_SHEET.src = PONY.src;
+/** The renderer and the preview wait for this before they draw, so no frame is taken without the pony. */
+window.briefingReady = PONY_SHEET.decode();
+
+function wave(x, base, amp, period, phase) {
+  const p = 2 * Math.PI * (x / period + phase);
+  return base - amp * (0.72 * Math.sin(p) + 0.28 * Math.sin(2 * p + 1.1));
+}
+function hill(parent, base, amp, period, phase, color) {
+  let d = `M0 ${H}`;
+  for (let x = 0; x <= W; x += 12) d += `L${x} ${n2(wave(x, base, amp, period, phase))}`;
+  el('path', { d: `${d}L${W} ${H}Z`, fill: color }, parent);
+}
+function cloud(parent, x, y, s) {
+  const g = el('g', { transform: `translate(${x} ${y}) scale(${s})`, fill: PAL.cloud }, parent);
+  el('rect', { x: -86, y: -10, width: 172, height: 34, rx: 17 }, g);
+  el('circle', { cx: -40, cy: -6, r: 30 }, g);
+  el('circle', { cx: 6, cy: -24, r: 44 }, g);
+  el('circle', { cx: 50, cy: -4, r: 30 }, g);
+}
+/** Builds the closing beat; returns update(local seconds). */
+function closingBeat(parent) {
+  const g = el('g', {}, parent);
+  el('rect', { width: W, height: H, fill: 'url(#endSky)' }, g);
+  const sun = { x: 880, y: 176 };
+  el('circle', { cx: sun.x, cy: sun.y, r: 100, fill: PAL.halo, opacity: 0.32 }, g);
+  el('circle', { cx: sun.x, cy: sun.y, r: 78, fill: PAL.halo, opacity: 0.55 }, g);
+  el('circle', { cx: sun.x, cy: sun.y, r: 57, fill: PAL.disc }, g);
+  cloud(g, 168, 168, 1.0);
+  cloud(g, 590, 104, 0.62);
+  hill(g, 560, 46, 560, 0.62, PAL.farthest);
+  hill(g, 640, 50, 380, 0.1, PAL.far);
+  hill(g, 712, 40, 260, 0.37, PAL.near);
+  // Tree band on the far edge of the meadow.
+  const band = el('g', { fill: PAL.trees }, g);
+  for (let x = -40; x < W + 60; x += 96) {
+    el('path', { d: `M${x} 792 L${x + 14} 742 L${x + 28} 792 Z` }, band);
+    el('ellipse', { cx: x + 52, cy: 774, rx: 17, ry: 21 }, band);
+    el('path', { d: `M${x + 66} 792 L${x + 76} 760 L${x + 86} 792 Z` }, band);
+  }
+  el('rect', { x: 0, y: 788, width: W, height: 160, fill: PAL.grass }, g);
+  const blades = el('g', { fill: PAL.blade, opacity: 0.5 }, g);
+  for (let i = 0; i < 18; i++) el('rect', { x: (i * 67 + 23) % W, y: 820 + ((i * 37) % 100), width: 14 + (i % 3) * 3, height: 3, rx: 1.5 }, blades);
+  el('rect', { x: 0, y: 944, width: W, height: 136, fill: PAL.road }, g);
+  el('rect', { x: 0, y: 944, width: W, height: 4, fill: PAL.curb }, g);
+  for (let x = 12; x < W; x += 64) el('rect', { x, y: 1004, width: 36, height: 5, rx: 2.5, fill: PAL.dash }, g);
+  el('rect', { x: 0, y: 1040, width: W, height: 40, fill: PAL.lane }, g);
+
+  // The amber check badge, left of centre.
+  const badge = { x: 300, y: 486, r: 146 };
+  const badgeG = el('g', {}, g);
+  const badgeShadow = el('circle', { cx: badge.x + 8, cy: badge.y + 16, r: badge.r, fill: PAL.shadow, opacity: 0.16, filter: 'url(#blur8)' }, badgeG);
+  const disc = el('g', {}, badgeG);
+  el('circle', { cx: badge.x, cy: badge.y, r: badge.r, fill: PAL.amber }, disc);
+  el('circle', { cx: badge.x, cy: badge.y, r: badge.r - 14, fill: 'none', stroke: '#FFFFFF', 'stroke-width': 3, opacity: 0.28 }, disc);
+  el('ellipse', { cx: badge.x - 34, cy: badge.y - 62, rx: 62, ry: 30, fill: '#FFFFFF', opacity: 0.16, transform: `rotate(-24 ${badge.x - 34} ${badge.y - 62})` }, disc);
+  const check = el('path', {
+    d: `M${badge.x - 58} ${badge.y + 4} L${badge.x - 16} ${badge.y + 46} L${badge.x + 62} ${badge.y - 42}`,
+    fill: 'none', stroke: '#FFFFFF', 'stroke-width': 26, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  }, disc);
+  const checkLength = check.getTotalLength();
+  set(check, { 'stroke-dasharray': n2(checkLength) });
+  const ring = pulseRing(badgeG, PAL.amber, 6);
+  const sparkles = [[128, 318, 1.0, 0.95], [488, 336, 0.8, 1.1], [150, 668, 0.7, 1.25], [462, 652, 0.9, 1.4]].map(([x, y, s, at]) => ({
+    node: el('path', { d: 'M0 -18 Q3 -3 18 0 Q3 3 0 18 Q-3 3 -18 0 Q-3 -3 0 -18 Z', fill: '#F3C861' }, g), x, y, s, at,
+  }));
+
+  // The pony on the meadow, facing the badge.
+  const pony = { x: 790, y: 846, s: 0.92 };
+  el('ellipse', { cx: pony.x + PONY.stance * pony.s, cy: pony.y - 4, rx: 150 * pony.s, ry: 13 * pony.s, fill: '#000000', opacity: 0.14 }, g);
+  const cell = el('foreignObject', {
+    x: n2(pony.x - PONY.w * pony.s / 2), y: n2(pony.y - PONY.feet * pony.s), width: n2(PONY.w * pony.s), height: n2(PONY.h * pony.s),
+  }, g);
+  const canvas = document.createElement('canvas');
+  canvas.width = PONY.w;
+  canvas.height = PONY.h;
+  canvas.style.cssText = 'display:block;width:100%;height:100%';
+  cell.appendChild(canvas);
+  const ink = canvas.getContext('2d');
+  let drawn = -1;
+
+  return function update(t) {
+    // The badge pops in, the check draws, one ring answers, then everything rests.
+    const pop = span(t, 0.05, 0.6);
+    const scale = lerp(0.55, 1, backOut(pop));
+    set(disc, { transform: `translate(${badge.x} ${badge.y}) scale(${n3(scale)}) translate(${-badge.x} ${-badge.y})`, opacity: n3(smooth(span(t, 0.05, 0.3))) });
+    set(badgeShadow, { opacity: n3(0.16 * smooth(span(t, 0.05, 0.5))) });
+    const draw = easeInOut(span(t, 0.45, 1.0));
+    set(check, { 'stroke-dashoffset': n2(checkLength * (1 - draw)) });
+    ring(t, 1.0, 0.9, badge.x, badge.y, badge.r, badge.r + 70);
+    for (const sp of sparkles) {
+      const p = span(t, sp.at, sp.at + 0.45);
+      const breathe = 1 + 0.08 * Math.sin(2 * Math.PI * 0.6 * (t - sp.at));
+      const s = sp.s * backOut(p) * (p >= 1 ? breathe : 1);
+      set(sp.node, { transform: `translate(${sp.x} ${sp.y}) scale(${n3(Math.max(0, s))})`, opacity: n3(smooth(p)) });
+    }
+    // The pony idles: the sheet's frame for this moment.
+    const frame = clamp(Math.round((t + PONY.lead) * PONY.fps), 0, PONY.frames - 1);
+    if (frame !== drawn) {
+      drawn = frame;
+      ink.clearRect(0, 0, PONY.w, PONY.h);
+      ink.drawImage(PONY_SHEET, (frame % PONY.cols) * PONY.w, Math.floor(frame / PONY.cols) * PONY.h, PONY.w, PONY.h, 0, 0, PONY.w, PONY.h);
+    }
+  };
+}
+
+/** Stacks the scenes: each fades in over the previous one across its cue; returns renderAt(seconds). */
+function series(scenes) {
+  for (const sc of scenes) sc.group = el('g', {}, SVG);
+  for (const sc of scenes) sc.update = sc.build(sc.group);
+  return function renderAt(seconds) {
+    const t = clamp(Number(seconds) || 0, 0, DURATION);
+    scenes.forEach((sc, i) => {
+      const from = i === 0 ? -1 : sc.start - FADE / 2;
+      const to = i === scenes.length - 1 ? DURATION + 1 : sc.end + FADE / 2;
+      const on = t >= from && t <= to;
+      set(sc.group, { display: on ? 'inline' : 'none' });
+      if (!on) return;
+      set(sc.group, { opacity: i === 0 ? 1 : n3(smooth(span(t, sc.start - FADE / 2, sc.start + FADE / 2))) });
+      sc.update(t - sc.start, t);
+    });
+  };
+}
+
+/** Real-time preview when the page is opened by hand; the renderer sets __BRIEFING_RENDER__ and calls renderAt itself. */
+function preview(renderAt) {
+  if (window.__BRIEFING_RENDER__) return;
+  window.briefingReady.then(() => {
+    const hold = new URLSearchParams(location.search).get('t');
+    if (hold !== null) { renderAt(Number(hold)); return; }
+    const start = performance.now();
+    const loop = (now) => { renderAt(((now - start) / 1000) % DURATION); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  });
+}
+/* ===== end of series kit ===== */
+
+/* ===== 사이렌이 들리면 ===== */
+const LANE = 156;
+const SIREN_RED = '#E2574C', SIREN_BLUE = '#4E7FE0';
+
+/** The emergency van from above, nose up: white body, orange side stripes, a red and blue light bar. */
+function van(parent) {
+  const g = el('g', {}, parent);
+  const shadow = el('g', {}, g);
+  el('rect', { x: -47, y: -104, width: 94, height: 212, rx: 23, fill: PAL.shadow, opacity: 0.26, filter: 'url(#blur4)' }, shadow);
+  const glows = el('g', {}, g);
+  const redGlow = el('circle', { cx: -22, cy: -52, r: 70, fill: 'url(#glowRed)', opacity: 0 }, glows);
+  const blueGlow = el('circle', { cx: 22, cy: -52, r: 70, fill: 'url(#glowBlue)', opacity: 0 }, glows);
+  const body = el('g', {}, g);
+  for (const [x, y] of [[-51, -74], [43, -74], [-51, 54], [43, 54]]) el('rect', { x, y, width: 8, height: 26, rx: 3, fill: '#2F333A' }, body);
+  el('rect', { x: -47, y: -108, width: 94, height: 216, rx: 23, fill: '#F6F6F2', stroke: '#D3D5D0', 'stroke-width': 1.5 }, body);
+  el('path', { d: 'M-37 -94 Q0 -104 37 -94 L34 -70 Q0 -76 -34 -70 Z', fill: '#C6D5E0' }, body);
+  el('rect', { x: -37, y: -66, width: 74, height: 160, rx: 12, fill: '#FFFFFF' }, body);
+  for (const sx of [-1, 1]) el('rect', { x: sx * 41 - 4, y: -86, width: 8, height: 186, rx: 4, fill: '#EA8C48' }, body);
+  for (const y of [8, 40]) el('rect', { x: -21, y, width: 42, height: 18, rx: 4, fill: '#ECEDE8' }, body);
+  for (const x of [-1, 1]) el('ellipse', { cx: x * 51, cy: -78, rx: 8, ry: 5, fill: '#F6F6F2', stroke: '#D3D5D0', 'stroke-width': 1.2 }, body);
+  el('rect', { x: -37, y: -60, width: 74, height: 18, rx: 9, fill: '#3B3F47' }, body);
+  const red = el('rect', { x: -34, y: -57.5, width: 32, height: 13, rx: 6.5, fill: SIREN_RED }, body);
+  const blue = el('rect', { x: 2, y: -57.5, width: 32, height: 13, rx: 6.5, fill: SIREN_BLUE }, body);
+  return {
+    g,
+    set(pose, t) {
+      set(g, { transform: `translate(${n2(pose.x)} ${n2(pose.y)})` });
+      set(shadow, { transform: `translate(6 9) rotate(${n2(pose.h)})` });
+      set(glows, { transform: `rotate(${n2(pose.h)})` });
+      set(body, { transform: `rotate(${n2(pose.h)})` });
+      const r = blink(t, 1.25), b = 1 - r;
+      set(red, { opacity: n3(0.35 + 0.65 * r) });
+      set(blue, { opacity: n3(0.35 + 0.65 * b) });
+      set(redGlow, { opacity: n3(0.85 * r) });
+      set(blueGlow, { opacity: n3(0.85 * b) });
+    },
+  };
+}
+
+/** Siren rings: soft red and blue circles leaving the light bar twice a second, spreading fast and fading. */
+function sirenRings(parent, count = 3) {
+  const rings = Array.from({ length: count }, (_, i) => el('circle', { r: 0, fill: 'none', stroke: i % 2 ? SIREN_BLUE : SIREN_RED, 'stroke-width': 10, opacity: 0 }, parent));
+  const EVERY = 0.5, LIFE = EVERY * count;
+  return (t, origin) => {
+    rings.forEach((ring, i) => {
+      // Ring i was born at the latest time <= t with (born / EVERY) % count == i.
+      const k = Math.floor((t / EVERY - i) / count);
+      const born = (k * count + i) * EVERY;
+      const age = t - born;
+      const p = age / LIFE;
+      const at = origin(born);
+      set(ring, { cx: n2(at.x), cy: n2(at.y), r: n2(50 + 680 * p), opacity: n3(age >= 0 ? 0.62 * Math.pow(1 - p, 1.3) * smooth(clamp(age / 0.15)) : 0) });
+    });
+  };
+}
+
+/**
+ * A one-way street running right with two lanes (lane 1 at y -LANE/2, lane 2 at y LANE/2), white edge
+ * lines, sidewalks with street trees on both sides and roofs beyond.
+ */
+function avenue(parent) {
+  const E = 2600, WALKW = 66;
+  const g = el('g', {}, parent);
+  const w = { g, ground: el('g', {}, g), marks: el('g', {}, g), decor: el('g', {}, g), traffic: el('g', {}, g), over: el('g', {}, g) };
+  el('rect', { x: -E, y: -E, width: 2 * E, height: 2 * E, fill: PAL.lawn }, w.ground);
+  for (const y of [LANE, -LANE - WALKW]) el('rect', { x: -E, y, width: 2 * E, height: WALKW, fill: PAL.walk }, w.ground);
+  el('rect', { x: -E, y: -LANE, width: 2 * E, height: 2 * LANE, fill: PAL.road }, w.ground);
+  for (const y of [LANE, -LANE - 3]) el('rect', { x: -E, y, width: 2 * E, height: 3, fill: PAL.walkEdge }, w.ground);
+  for (let x = -E; x < E; x += 84) el('rect', { x, y: -3, width: 46, height: 6, rx: 3, fill: PAL.paint }, w.marks);
+  for (const y of [LANE - 14, -LANE + 10]) el('rect', { x: -E, y, width: 2 * E, height: 4, fill: PAL.paint, opacity: 0.85 }, w.marks);
+  for (let x = -E + 80; x < E; x += 200) { streetTree(w.decor, x, LANE + WALKW / 2); streetTree(w.decor, x + 100, -LANE - WALKW / 2); }
+  const roofs = [['#E9DDCB', '#DFD0BB'], ['#D6DEE6', '#C8D2DC'], ['#DCE3D5', '#CED8C6'], ['#DCC4B3', '#D0B5A2']];
+  for (let i = 0, x = -E; x < E; i++) {
+    const width = [280, 230, 310, 250][i % 4];
+    roof(w.decor, x, LANE + WALKW + 44, width, 250, ...roofs[i % 4]);
+    roof(w.decor, x + 70, -LANE - WALKW - 44 - 240, width, 240, ...roofs[(i + 2) % 4]);
+    x += width + 50;
+  }
+  return w;
+}
+
+/** A layer for the siren rings that follows the scene camera but fades out over the caption's bottom strip. */
+function calmLayer(group) {
+  return el('g', {}, el('g', { mask: 'url(#calmBottom)' }, group));
+}
+
+/** A small four-point glint. */
+function glint(parent) {
+  return el('path', { d: 'M0 -16 Q2.5 -2.5 16 0 Q2.5 2.5 0 16 Q-2.5 2.5 -16 0 Q-2.5 -2.5 0 -16 Z', fill: '#FFFFFF', opacity: 0 }, parent);
+}
+
+// Scene 1 (0-4 s): a siren behind; the rings reach our car, its mirror glints and it looks back.
+function sceneListen(group) {
+  const cam = el('g', {}, group);
+  const w = avenue(cam);
+  atmosphere(group);
+  const other = car(w.traffic, 'silver');
+  const hero = car(w.traffic, 'hero');
+  const ambulance = van(w.traffic);
+  const ringCam = calmLayer(group);
+  const rings = sirenRings(ringCam);
+  const sight = el('path', { fill: 'none', stroke: '#FFFFFF', 'stroke-width': 7, 'stroke-linecap': 'round', 'stroke-dasharray': '2 17', opacity: 0 }, w.over);
+  const spark = glint(w.over);
+  const heroX = (t) => track(t, [[0, 0, 160], [3.0, 480, 160], [4.4, 640, 70]]);
+  const vanX = (t) => track(t, [[0, -760, 300], [2.6, 20, 300], [4.4, 330, 110]]);
+  return (t) => {
+    const hx = heroX(t);
+    aim(cam, hx - 120, 6, 1.35);
+    aim(ringCam, hx - 120, 6, 1.35);
+    hero.set({ x: hx, y: LANE / 2, h: 90 }, { brake: smooth(span(t, 2.95, 3.2)) });
+    other.set({ x: hx + 150 + 8 * t, y: -LANE / 2, h: 90 });
+    const vx = vanX(t);
+    ambulance.set({ x: vx, y: LANE / 2, h: 90 }, t);
+    rings(t, (born) => ({ x: vanX(born) + 52, y: LANE / 2 }));
+    // The left mirror (driver side) sits on the car's top flank when it faces right.
+    const mirror = { x: hx + 26, y: LANE / 2 - 52 };
+    const glow = Math.max(bump(t, 0.95, 1.4), bump(t, 2.2, 2.65));
+    set(spark, { transform: `translate(${n2(mirror.x)} ${n2(mirror.y)}) scale(${n3(0.5 + 1.1 * glow)})`, opacity: n3(glow) });
+    // The look: a dotted line from the mirror back to the van, drawn out, then held while it nears.
+    const target = { x: vx + 118, y: LANE / 2 - 30 };
+    const reach = easeInOut(span(t, 1.25, 1.95));
+    const end = { x: lerp(mirror.x, target.x, reach), y: lerp(mirror.y, target.y, reach) };
+    const bend = { x: (mirror.x + end.x) / 2, y: Math.min(mirror.y, end.y) - 40 * reach };
+    set(sight, {
+      d: `M${n2(mirror.x - 12)} ${n2(mirror.y - 4)} Q${n2(bend.x)} ${n2(bend.y)} ${n2(end.x)} ${n2(end.y)}`,
+      opacity: n3(0.9 * smooth(span(t, 1.2, 1.4)) * (1 - smooth(span(t, 3.4, 3.8)))),
+    });
+  };
+}
+
+// Scene 2 (4-8 s): at a crossing every car stops before entering and the box stays clear for the van.
+function sceneClear(group) {
+  const cam = el('g', {}, group);
+  const HALF = 140, STOP = 262, NOSE = 84;
+  const w = crossroads(cam, { half: HALF, corner: 76, walk: 50 });
+  atmosphere(group);
+  const m = w.marks;
+  crosswalk(m, true, 170, 236, -HALF + 6, HALF - 6);
+  crosswalk(m, true, -236, -170, -HALF + 6, HALF - 6);
+  crosswalk(m, false, 170, 236, -HALF + 6, HALF - 6);
+  crosswalk(m, false, -236, -170, -HALF + 6, HALF - 6);
+  el('rect', { x: 4, y: STOP - 10, width: HALF - 10, height: 10, rx: 2, fill: PAL.paint }, m);
+  el('rect', { x: -HALF + 6, y: -STOP, width: HALF - 10, height: 10, rx: 2, fill: PAL.paint }, m);
+  el('rect', { x: STOP - 10, y: -HALF + 6, width: 10, height: HALF - 10, rx: 2, fill: PAL.paint }, m);
+  el('rect', { x: -STOP, y: 4, width: 10, height: HALF - 10, rx: 2, fill: PAL.paint }, m);
+  centreLine(m, 0, STOP + 4, 0, 2400);
+  centreLine(m, 0, -2400, 0, -STOP - 4);
+  centreLine(m, STOP + 4, 0, 2400, 0);
+  centreLine(m, -2400, 0, -STOP - 4, 0);
+  roof(w.decor, -470, -480, 240, 220, '#E9DDCB', '#DFD0BB');
+  roof(w.decor, 290, -470, 290, 210, '#D6DEE6', '#C8D2DC');
+  roof(w.decor, -500, 290, 250, 240, '#DCC4B3', '#D0B5A2');
+  roof(w.decor, 300, 300, 270, 250, '#DCE3D5', '#CED8C6');
+  for (const [x, y, r] of [[-236, -236, 34], [240, -232, 30], [-246, 262, 34], [252, 668, 36]]) tree(w.decor, x, y, r);
+  const mid = HALF + 25;
+  for (const v of [400, 560, 720]) for (const sx of [-1, 1]) { streetTree(w.decor, sx * mid, v); streetTree(w.decor, v * sx, -mid); streetTree(w.decor, v * sx, mid); streetTree(w.decor, sx * mid, -v); }
+  const box = el('rect', { x: -HALF + 8, y: -HALF + 8, width: 2 * HALF - 16, height: 2 * HALF - 16, rx: 26, fill: '#FFFFFF', 'fill-opacity': 0.07, stroke: '#FFFFFF', 'stroke-width': 4, 'stroke-dasharray': '14 12', opacity: 0 }, w.over);
+  const pulse = carPulse(w.traffic);
+  const south = car(w.traffic, 'hero');
+  const north = car(w.traffic, 'white');
+  const east = car(w.traffic, 'slate');
+  const ambulance = van(w.traffic);
+  const ringCam = calmLayer(group);
+  const rings = sirenRings(ringCam);
+  const southKeys = [[-0.3, 0, 210], [1.1, 150, 0]];
+  const northKeys = [[-0.3, 0, 150], [1.0, 100, 0]];
+  const eastKeys = [[-0.3, 0, 120], [0.9, 72, 0]];
+  const vanX = (t) => -820 + 430 * t;
+  return (t) => {
+    aim(cam, 40, 146, 1.1);
+    aim(ringCam, 40, 146, 1.1);
+    const sy = STOP + NOSE + 150 - track(t, southKeys);
+    south.set({ x: HALF / 2, y: sy, h: 0 }, { brake: smooth(span(t, -0.1, 0.2)) });
+    pulse(t, 1.1, 0.9, { x: HALF / 2, y: STOP + NOSE, h: 0 });
+    north.set({ x: -HALF / 2, y: -STOP - NOSE - 100 + track(t, northKeys), h: 180 }, { brake: 1 });
+    east.set({ x: STOP + NOSE + 72 - track(t, eastKeys), y: -HALF / 2, h: 270 }, { brake: 1 });
+    ambulance.set({ x: vanX(t), y: HALF / 2, h: 90 }, t);
+    rings(t, (born) => ({ x: vanX(born) + 52, y: HALF / 2 }));
+    set(box, { opacity: n3(smooth(span(t, 0.7, 1.1)) * (1 - smooth(span(t, 3.3, 3.8)))) });
+  };
+}
+
+// Scene 3 (8-12 s): on the two-lane road the cars part to either side and the van passes between them.
+function sceneYield(group) {
+  const cam = el('g', {}, group);
+  const w = avenue(cam);
+  atmosphere(group);
+  const lane1 = [['white', -170], ['silver', 300]].map(([look, x]) => ({ c: car(w.traffic, look), x }));
+  const lane2 = [['hero', 60], ['slate', 470]].map(([look, x]) => ({ c: car(w.traffic, look), x }));
+  const ambulance = van(w.traffic);
+  const ringCam = calmLayer(group);
+  const rings = sirenRings(ringCam);
+  const vanX = (t) => -980 + 420 * t;
+  const along = (t) => track(t, [[-0.3, -18, 60], [1.4, 66, 30], [2.4, 80, 0]]);
+  const aside = (t) => track(t, [[0.1, 0, 0], [1.3, 1, 0]]);
+  return (t) => {
+    aim(cam, 140, 6, 1.24);
+    aim(ringCam, 140, 6, 1.24);
+    const d = along(t), a = aside(t);
+    for (const k of lane1) k.c.set({ x: k.x + d, y: -LANE / 2 - 33 * a, h: 90 - 8 * bump(t, 0.1, 1.3) }, { side: 'L', blinker: t < 2.6 ? blink(t, 1.5) : 0, brake: smooth(span(t, 1.0, 1.3)) });
+    for (const k of lane2) k.c.set({ x: k.x + d, y: LANE / 2 + 33 * a, h: 90 + 8 * bump(t, 0.1, 1.3) }, { side: 'R', blinker: t < 2.6 ? blink(t, 1.5) : 0, brake: smooth(span(t, 1.0, 1.3)) });
+    ambulance.set({ x: vanX(t), y: 0, h: 90 }, t);
+    rings(t, (born) => ({ x: vanX(born) + 52, y: 0 }));
+  };
+}
+
+const renderAt = series([
+  { start: 0, end: 4, build: sceneListen },
+  { start: 4, end: 8, build: sceneClear },
+  { start: 8, end: 12, build: sceneYield },
+  { start: 12, end: 15, build: (g) => closingBeat(g) },
+]);
+window.renderAt = renderAt;
+renderAt(0);
+preview(renderAt);
+</script>
+</body>
+</html>

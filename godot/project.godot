@@ -1,0 +1,22 @@
+; KiloMoa renderer: a 3D clay diorama per theme. Native Android owns all safety decisions.
+config_version=5
+
+[application]
+config/name="KiloMoa Renderer"
+run/main_scene="res://main.tscn"
+run/max_fps=0
+run/low_processor_mode=true
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0.968627, 0.972549, 0.980392, 1)
+
+[display]
+window/size/viewport_width=840
+window/size/viewport_height=1184
+window/size/resizable=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=1

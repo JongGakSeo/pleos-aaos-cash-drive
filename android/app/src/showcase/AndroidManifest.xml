@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Submission flavor: the home is the only launcher and the development screen is not declared. The main
+         manifest carries no INTERNET permission; the debug build type's extras are stripped in src/showcaseDebug.
+         Ad supply, ledger, account and redemption are mock data; vehicle signals are real. -->
+    <!-- The adaptive horse icon (src/home/res) for the launcher dock, the driving block screen and the dialogs. -->
+    <application android:icon="@mipmap/ic_launcher" tools:replace="android:icon">
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <!-- Launcher entry: shows the speed permission dialog in a task of its own, so the Pleos launcher never
+             records the dialog as the home task's top activity (planning/evidence/2026-11-08-launcher-gate). -->
+        <activity android:name=".home.PermissionGateActivity" android:exported="true" android:label="킬로모아"
+            android:process=":home" android:launchMode="singleTask" android:taskAffinity="${applicationId}.gate"
+            android:excludeFromRecents="true" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".home.HomeActivity" android:exported="true" android:label="킬로모아"
+            android:process=":home" android:launchMode="singleTask" android:resizeableActivity="true"
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+    </application>
+</manifest>
